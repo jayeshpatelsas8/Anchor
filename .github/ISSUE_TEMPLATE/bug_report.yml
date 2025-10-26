@@ -1,0 +1,158 @@
+name: Bug Report
+description: Report a bug or issue with the Anchor app
+title: "[BUG] "
+labels: ["bug", "triage"]
+assignees:
+  - aunchagaonkar
+
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Please provide as much detail as possible to help us resolve the issue.
+
+  - type: checkboxes
+    id: terms
+    attributes:
+      label: Prerequisites
+      options:
+        - label: I have searched existing issues to ensure this is not a duplicate
+          required: true
+        - label: I have read the documentation
+          required: true
+        - label: I am using the latest version of the app
+          required: true
+
+  - type: dropdown
+    id: device-type
+    attributes:
+      label: Device Type
+      description: What type of device are you using?
+      options:
+        - Android Phone
+        - Android Tablet
+        - Other (please specify in description)
+    validations:
+      required: true
+
+  - type: input
+    id: android-version
+    attributes:
+      label: Android Version
+      description: What version of Android are you running?
+      placeholder: "e.g., Android 14, Android 13, etc."
+    validations:
+      required: true
+
+  - type: input
+    id: app-version
+    attributes:
+      label: App Version
+      description: What version of Anchor are you using?
+      placeholder: "e.g., v1.0.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: root-method
+    attributes:
+      label: Feature Area
+      description: Which feature is affected by this issue?
+      options:
+        - SMS Commands
+        - Location Services
+        - Ring Command
+        - Call Back Feature
+        - Whitelist Management
+        - Settings/Configuration
+        - Permissions
+        - Other (please specify)
+    validations:
+      required: true
+
+  - type: textarea
+    id: bug-description
+    attributes:
+      label: Bug Description
+      description: A clear and concise description of what the bug is
+      placeholder: Describe the issue you're experiencing...
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps-to-reproduce
+    attributes:
+      label: Steps to Reproduce
+      description: Steps to reproduce the behavior
+      placeholder: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Scroll down to '...'
+        4. See error
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected-behavior
+    attributes:
+      label: Expected Behavior
+      description: A clear and concise description of what you expected to happen
+      placeholder: What should have happened instead?
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual-behavior
+    attributes:
+      label: Actual Behavior
+      description: What actually happened?
+      placeholder: What actually happened?
+    validations:
+      required: true
+
+  - type: dropdown
+    id: network-type
+    attributes:
+      label: Command Affected
+      description: Which SMS command is affected by this issue?
+      multiple: true
+      options:
+        - locate (GPS location)
+        - ring (Ring device)
+        - info (Device info)
+        - callme (Call back)
+        - sound (Sound mode)
+        - ping (Service check)
+        - help (Command list)
+        - All commands
+        - Not command related
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: If applicable, add logs to help explain your problem
+      placeholder: Paste any relevant logs here...
+      render: shell
+
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots
+      description: If applicable, add screenshots to help explain your problem
+      placeholder: Drag and drop images here or paste image URLs
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add any other context about the problem here
+      placeholder: Any additional information that might be helpful...
+
+  - type: input
+    id: device-model
+    attributes:
+      label: Device Model
+      description: What device model are you using?
+      placeholder: "e.g., Samsung Galaxy S24, Pixel 8 Pro, etc."
+
