@@ -49,15 +49,17 @@ class SmsCommandProcessor(private val context: Context) {
             Log.d(TAG, "Processing command from: $senderNumber")
         }
 
-        // Get the command password
+        // Get the command password and prefix
         val commandPassword = appSettings.getString(AppSettings.SMS_COMMAND_PASSWORD)
+        val commandPrefix = appSettings.getString(AppSettings.SMS_COMMAND_PREFIX)
 
         // Split the raw command by whitespace to extract actual command and parameters
         val parts = rawCommand.trim().split("\\s+".toRegex())
 
         // We expect at least command and password
         if (parts.size < 2) {
-            sendSmsResponse(senderNumber, context.getString(R.string.missing_password))
+            val errorMessage = context.getString(R.string.missing_password, commandPrefix)
+            sendSmsResponse(senderNumber, errorMessage)
             return
         }
 
@@ -226,7 +228,13 @@ class SmsCommandProcessor(private val context: Context) {
     
     private fun sendSmsResponse(phoneNumber: String, message: String) {
         try {
-            val smsManager = SmsManager.getDefault()
+            // Use SmsManager API for Android S+ (API 31+)
+            val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                context.getSystemService(SmsManager::class.java)
+            } else {
+                @Suppress("DEPRECATION")
+                SmsManager.getDefault()
+            }
             
             // If message is too long, divide it into parts
             if (message.length > 160) {

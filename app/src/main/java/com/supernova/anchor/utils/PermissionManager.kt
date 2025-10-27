@@ -225,9 +225,21 @@ class PermissionManager(private val activity: ComponentActivity) {
     /**
      * Helper to register for permission change notification from onRequestPermissionsResult
      * To be called from the activity's onRequestPermissionsResult method
+     * @deprecated Use handlePermissionResult(Map<String, Boolean>) instead with Activity Result API
      */
+    @Deprecated("Use handlePermissionResult(Map<String, Boolean>) instead with Activity Result API")
     fun handlePermissionResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
         permissions.forEach { permission ->
+            notifyPermissionChanged(permission)
+        }
+    }
+    
+    /**
+     * Helper to register for permission change notification from Activity Result API
+     * To be called from the registerForActivityResult callback
+     */
+    fun handlePermissionResult(permissions: Map<String, Boolean>) {
+        permissions.keys.forEach { permission ->
             notifyPermissionChanged(permission)
         }
     }

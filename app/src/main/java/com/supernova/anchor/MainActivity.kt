@@ -12,6 +12,7 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
@@ -40,6 +41,13 @@ class MainActivity : ComponentActivity() {
     private lateinit var appSettings: AppSettings
     private lateinit var permissionManager: PermissionManager
     private val showDisclaimerDialogState = mutableStateOf(false)
+    
+    // permission launcher
+    private val requestPermissionsLauncher: ActivityResultLauncher<Array<String>> =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            // Permissions handled by PermissionManager
+            permissionManager.handlePermissionResult(permissions)
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -96,16 +104,6 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, PermissionsActivity::class.java)
         startActivity(intent)
     }
-    
-    @Deprecated("Deprecated in Java")
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        permissionManager.handlePermissionResult(requestCode, permissions, grantResults)
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -152,12 +150,13 @@ fun MainScreen(
             Spacer(modifier = Modifier.height(32.dp))
             
             // App logo with adaptive sizing
-            Image(
-                painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                contentDescription = "Logo",
+            Icon(
+                painter = painterResource(id = R.drawable.ic_anchor_logo),
+                contentDescription = "Anchor Logo",
                 modifier = Modifier
                     .size(dimensionResource(id = R.dimen.logo_size))
-                    .padding(bottom = 24.dp)
+                    .padding(bottom = 24.dp),
+                tint = MaterialTheme.colorScheme.primary
             )
             
             Text(

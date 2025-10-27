@@ -88,8 +88,8 @@ fun AboutScreen(
                 ) {
                     // App Logo
                     Image(
-                        painter = painterResource(id = R.drawable.ic_launcher_foreground),
-                        contentDescription = "App Logo",
+                        painter = painterResource(id = R.drawable.ic_anchor_logo),
+                        contentDescription = "Anchor Logo",
                         modifier = Modifier
                             .size(120.dp)
                             .padding(8.dp)

@@ -87,7 +87,7 @@ The app supports 7 remote control commands:
 <div align="center">
 
 [<img src="media/get_it_github.png" alt="Get it on GitHub" height="80" align="center">](https://github.com/aunchagaonkar/anchor/releases)
-
+[<img src="https://raw.githubusercontent.com/ImranR98/Obtainium/main/assets/graphics/badge_obtainium.png" alt="Get it on Obtainium" height="55" align="center">](https://apps.obtainium.imranr.dev/redirect?r=obtainium://add/https://github.com/aunchagaonkar/Anchor/)
 </div>
 
 1. Download the latest APK from the Releases page
@@ -155,20 +155,20 @@ cd anchor
 ## Security & Privacy
 
 ### What We DON'T Do
-- ❌ No internet access
-- ❌ No data collection
-- ❌ No analytics or tracking
-- ❌ No third-party services
-- ❌ No background data sync
-- ❌ No user accounts
+- No internet access
+- No data collection
+- No analytics or tracking
+- No third-party services
+- No background data sync
+- No user accounts
 
 ### What We DO
-- ✅ SMS-only communication
-- ✅ Password protection
-- ✅ Phone number whitelist
-- ✅ Local data storage only
-- ✅ Open source code
-- ✅ Transparent operations
+- SMS-only communication
+- Password protection
+- Phone number whitelist
+- Local data storage only
+- Open source code
+- Transparent operations
 
 ### Security Best Practices
 1. Use a strong, unique password (12+ characters)

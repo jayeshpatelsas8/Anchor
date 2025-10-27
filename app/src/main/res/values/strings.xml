@@ -71,7 +71,7 @@
     <string name="command_password_explanation_required">All SMS commands require a password in this format: "prefix command password [parameters]". For example: "PIN locate mypassword". This adds an extra layer of security to prevent unauthorized use of commands even if someone knows your command prefix.</string>
     <string name="how_to_use">How to use</string>
     <string name="prefix">Prefix</string>
-    <string name="missing_password">Missing password. Command format should be: command password [parameters]</string>
+    <string name="missing_password">Missing password. Command format should be: %1$s command password [parameters]</string>
     <string name="invalid_password">Invalid password. Please check your command and try again.</string>
     <string name="available_commands_with_password">Available commands:\n\n
 %1$s locate %2$s - Get your device\'s current GPS location\n

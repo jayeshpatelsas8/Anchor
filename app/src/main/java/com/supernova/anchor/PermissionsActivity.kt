@@ -12,6 +12,8 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.activity.result.ActivityResultLauncher
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -50,6 +52,14 @@ class PermissionsActivity : ComponentActivity() {
     // Permission refresh trigger
     private val permissionRefreshTrigger = mutableStateOf(0)
     
+    // permission launcher
+    private val requestPermissionsLauncher: ActivityResultLauncher<Array<String>> =
+        registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { permissions ->
+            // Permissions handled by PermissionManager
+            permissionManager.handlePermissionResult(permissions)
+            refreshPermissions()
+        }
+    
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -75,17 +85,6 @@ class PermissionsActivity : ComponentActivity() {
         
         // Register listeners for permission changes
         registerPermissionListeners()
-    }
-    
-    @Deprecated("Deprecated in Java")
-    override fun onRequestPermissionsResult(
-        requestCode: Int,
-        permissions: Array<String>,
-        grantResults: IntArray
-    ) {
-        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
-        permissionManager.handlePermissionResult(requestCode, permissions, grantResults)
-        refreshPermissions()
     }
     
     override fun onResume() {

@@ -1,9 +1,11 @@
 package com.supernova.anchor.utils
 
 import android.content.Context
+import android.media.AudioAttributes
 import android.media.AudioManager
 import android.media.MediaPlayer
 import android.media.RingtoneManager
+import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
@@ -49,7 +51,20 @@ object RingtonePlayer {
             val ringtoneUri = RingtoneManager.getDefaultUri(RingtoneManager.TYPE_RINGTONE)
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(context, ringtoneUri)
-                setAudioStreamType(AudioManager.STREAM_RING)
+                
+                // Use modern AudioAttributes API for Android L+ (API 21+)
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.LOLLIPOP) {
+                    setAudioAttributes(
+                        AudioAttributes.Builder()
+                            .setUsage(AudioAttributes.USAGE_ALARM)
+                            .setContentType(AudioAttributes.CONTENT_TYPE_SONIFICATION)
+                            .build()
+                    )
+                } else {
+                    @Suppress("DEPRECATION")
+                    setAudioStreamType(AudioManager.STREAM_RING)
+                }
+                
                 isLooping = true
                 prepare()
                 start()
