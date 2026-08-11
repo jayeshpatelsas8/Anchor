@@ -31,7 +31,7 @@
     <string name="device_location">Device location: %1$.6f, %2$.6f</string>
     <string name="location_not_available">Location information is not available.</string>
     <string name="ring_command_received">Ring Command Received</string>
-    <string name="device_info">Battery: %1$d%%\nCharging: %2$s\nScreen On: %3$s\nWiFi: %4$s\nTime: %5$s</string>
+    <string name="device_info">Battery: %1$d%%\nCharging: %2$s\nScreen On: %3$s\nTime: %5$s</string>
     <string name="yes">Yes</string>
     <string name="no">No</string>
     <string name="enabled">Enabled</string>
