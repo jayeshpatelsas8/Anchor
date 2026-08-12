@@ -41,7 +41,6 @@ class LocationUtils(private val context: Context) {
             callback(null, false)
             return
         }
-
         requestFreshLocation(callback)
     }
 
@@ -75,7 +74,7 @@ class LocationUtils(private val context: Context) {
                     handler.removeCallbacksAndMessages(null)
                     fusedLocationClient.removeLocationUpdates(this)
                     if (wakeLock.isHeld) wakeLock.release()
-                    callback(result.lastLocation, true) // fresh GPS
+                    callback(result.lastLocation, true)
                 }
             }
         }
@@ -95,7 +94,6 @@ class LocationUtils(private val context: Context) {
                 Looper.getMainLooper()
             )
 
-            // 10-second timeout → fallback to lastLocation so SMS never goes silent
             handler.postDelayed({
                 if (!delivered) {
                     delivered = true
@@ -104,7 +102,7 @@ class LocationUtils(private val context: Context) {
 
                     fusedLocationClient.lastLocation
                         .addOnSuccessListener { loc ->
-                            callback(loc, false) // stale fallback
+                            callback(loc, false)
                         }
                         .addOnFailureListener {
                             callback(null, false)
