@@ -23,6 +23,11 @@
     
     <!-- For remote ringing functionality -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+  
+    
+    <!-- Required for LocationUtils to keep CPU alive during GPS fix -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
 
     <application
         android:allowBackup="false"
