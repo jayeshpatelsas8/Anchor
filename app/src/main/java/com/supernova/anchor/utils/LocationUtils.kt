@@ -4,7 +4,9 @@ import android.Manifest
 import android.content.Context
 import android.content.pm.PackageManager
 import android.location.Location
+import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.google.android.gms.location.FusedLocationProviderClient
@@ -15,13 +17,12 @@ import com.google.android.gms.location.LocationServices
 import com.google.android.gms.location.Priority
 
 class LocationUtils(private val context: Context) {
-    
+
     private val fusedLocationClient: FusedLocationProviderClient by lazy {
         LocationServices.getFusedLocationProviderClient(context)
     }
-    
+
     fun getCurrentLocation(callback: (Location?) -> Unit) {
-        // Check for location permissions
         if (ActivityCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -35,25 +36,12 @@ class LocationUtils(private val context: Context) {
             callback(null)
             return
         }
-        
-        // First try to get the last known location
-        fusedLocationClient.lastLocation
-            .addOnSuccessListener { location ->
-                if (location != null) {
-                    callback(location)
-                } else {
-                    // If last known location is null, request a fresh location
-                    requestFreshLocation(callback)
-                }
-            }
-            .addOnFailureListener {
-                Log.e(TAG, "Error getting last location", it)
-                requestFreshLocation(callback)
-            }
+
+        // Always request a fresh fix — never trust lastLocation cache
+        requestFreshLocation(callback)
     }
-    
+
     private fun requestFreshLocation(callback: (Location?) -> Unit) {
-        // Check for location permissions again
         if (ActivityCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -66,47 +54,65 @@ class LocationUtils(private val context: Context) {
             callback(null)
             return
         }
-        
-        val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 10000)
-            .setWaitForAccurateLocation(false)
-            .setMinUpdateIntervalMillis(5000)
-            .setMaxUpdateDelayMillis(15000)
-            .build()
-        
+
+        // Keep CPU alive so Doze doesn't kill GPS mid-fix
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK, "Anchor::GpsFix"
+        )
+        wakeLock.acquire(35_000)
+
+        var delivered = false
+        val handler = Handler(Looper.getMainLooper())
+
         val locationCallback = object : LocationCallback() {
             override fun onLocationResult(locationResult: LocationResult) {
-                locationResult.lastLocation?.let {
-                    callback(it)
-                    
-                    // Remove location updates after receiving a location
+                if (!delivered) {
+                    delivered = true
+                    handler.removeCallbacksAndMessages(null)
                     fusedLocationClient.removeLocationUpdates(this)
-                } ?: run {
-                    callback(null)
+                    if (wakeLock.isHeld) wakeLock.release()
+                    callback(locationResult.lastLocation)
                 }
             }
         }
-        
+
+        val locationRequest = LocationRequest.Builder(
+            Priority.PRIORITY_HIGH_ACCURACY, 1000L
+        )
+            .setWaitForAccurateLocation(true)   // wait for GPS satellites, not cell towers
+            .setMinUpdateIntervalMillis(500)
+            .setDurationMillis(30_000)
+            .build()
+
         try {
             fusedLocationClient.requestLocationUpdates(
                 locationRequest,
                 locationCallback,
                 Looper.getMainLooper()
             )
-            
-            // Set a timeout to stop location updates if no location is received within 30 seconds
-            Looper.myLooper()?.let { looper ->
-                android.os.Handler(looper).postDelayed({
+
+            // Hard timeout: if GPS never locks, fail cleanly
+            handler.postDelayed({
+                if (!delivered) {
+                    delivered = true
                     fusedLocationClient.removeLocationUpdates(locationCallback)
+                    if (wakeLock.isHeld) wakeLock.release()
                     callback(null)
-                }, 30000)
-            }
+                }
+            }, 30_000)
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting location updates", e)
-            callback(null)
+            if (!delivered) {
+                delivered = true
+                handler.removeCallbacksAndMessages(null)
+                if (wakeLock.isHeld) wakeLock.release()
+                callback(null)
+            }
         }
     }
-    
+
     companion object {
         private const val TAG = "LocationUtils"
     }
-} 
+}
