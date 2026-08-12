@@ -92,10 +92,9 @@ class SmsCommandProcessor(private val context: Context) {
             else -> sendSmsResponse(senderNumber, context.getString(R.string.unknown_command))
         }
     }
-
-    private fun handleLocateCommand(senderNumber: String) {
-        // Get location and send it back
-        LocationUtils(context).getCurrentLocation { location ->
+   
+        private fun handleLocateCommand(senderNumber: String) {
+        LocationUtils(context).getCurrentLocation { location, isFresh ->
             if (location != null) {
                 val locationMessage = context.getString(
                     R.string.device_location,
@@ -103,10 +102,10 @@ class SmsCommandProcessor(private val context: Context) {
                     location.longitude
                 )
                 val googleMapsLink = "https://maps.google.com/maps?q=${location.latitude},${location.longitude}"
-
-                sendSmsResponse(senderNumber, "$locationMessage\n$googleMapsLink")
+                val freshnessNote = if (isFresh) "" else "\n\n[FALLBACK: GPS timed out, using cached location]"
+                sendSmsResponse(senderNumber, "$locationMessage\n$googleMapsLink$freshnessNote")
             } else {
-                sendSmsResponse(senderNumber, context.getString(R.string.location_not_available))
+                sendSmsResponse(senderNumber, "Location unavailable. GPS failed and no cached location found.")
             }
         }
     }
