@@ -22,7 +22,12 @@ class LocationUtils(private val context: Context) {
         LocationServices.getFusedLocationProviderClient(context)
     }
 
-    fun getCurrentLocation(callback: (Location?) -> Unit) {
+    /**
+     * @param callback (location, isFresh)
+     *        isFresh = true  → real-time GPS fix
+     *        isFresh = false → fallback to last known location
+     */
+    fun getCurrentLocation(callback: (Location?, Boolean) -> Unit) {
         if (ActivityCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -33,15 +38,14 @@ class LocationUtils(private val context: Context) {
             ) != PackageManager.PERMISSION_GRANTED
         ) {
             Log.d(TAG, "Location permission not granted")
-            callback(null)
+            callback(null, false)
             return
         }
 
-        // Always request a fresh fix — never trust lastLocation cache
         requestFreshLocation(callback)
     }
 
-    private fun requestFreshLocation(callback: (Location?) -> Unit) {
+    private fun requestFreshLocation(callback: (Location?, Boolean) -> Unit) {
         if (ActivityCompat.checkSelfPermission(
                 context,
                 Manifest.permission.ACCESS_FINE_LOCATION
@@ -51,28 +55,27 @@ class LocationUtils(private val context: Context) {
                 Manifest.permission.ACCESS_COARSE_LOCATION
             ) != PackageManager.PERMISSION_GRANTED
         ) {
-            callback(null)
+            callback(null, false)
             return
         }
 
-        // Keep CPU alive so Doze doesn't kill GPS mid-fix
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val wakeLock = powerManager.newWakeLock(
             PowerManager.PARTIAL_WAKE_LOCK, "Anchor::GpsFix"
         )
-        wakeLock.acquire(35_000)
+        wakeLock.acquire(15_000)
 
         var delivered = false
         val handler = Handler(Looper.getMainLooper())
 
         val locationCallback = object : LocationCallback() {
-            override fun onLocationResult(locationResult: LocationResult) {
+            override fun onLocationResult(result: LocationResult) {
                 if (!delivered) {
                     delivered = true
                     handler.removeCallbacksAndMessages(null)
                     fusedLocationClient.removeLocationUpdates(this)
                     if (wakeLock.isHeld) wakeLock.release()
-                    callback(locationResult.lastLocation)
+                    callback(result.lastLocation, true) // fresh GPS
                 }
             }
         }
@@ -80,9 +83,9 @@ class LocationUtils(private val context: Context) {
         val locationRequest = LocationRequest.Builder(
             Priority.PRIORITY_HIGH_ACCURACY, 1000L
         )
-            .setWaitForAccurateLocation(true)   // wait for GPS satellites, not cell towers
+            .setWaitForAccurateLocation(true)
             .setMinUpdateIntervalMillis(500)
-            .setDurationMillis(30_000)
+            .setDurationMillis(10_000)
             .build()
 
         try {
@@ -92,22 +95,30 @@ class LocationUtils(private val context: Context) {
                 Looper.getMainLooper()
             )
 
-            // Hard timeout: if GPS never locks, fail cleanly
+            // 10-second timeout → fallback to lastLocation so SMS never goes silent
             handler.postDelayed({
                 if (!delivered) {
                     delivered = true
                     fusedLocationClient.removeLocationUpdates(locationCallback)
                     if (wakeLock.isHeld) wakeLock.release()
-                    callback(null)
+
+                    fusedLocationClient.lastLocation
+                        .addOnSuccessListener { loc ->
+                            callback(loc, false) // stale fallback
+                        }
+                        .addOnFailureListener {
+                            callback(null, false)
+                        }
                 }
-            }, 30_000)
+            }, 10_000)
+
         } catch (e: Exception) {
             Log.e(TAG, "Error requesting location updates", e)
             if (!delivered) {
                 delivered = true
                 handler.removeCallbacksAndMessages(null)
                 if (wakeLock.isHeld) wakeLock.release()
-                callback(null)
+                callback(null, false)
             }
         }
     }
