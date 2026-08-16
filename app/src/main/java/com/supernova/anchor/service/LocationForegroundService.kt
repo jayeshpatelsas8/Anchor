@@ -127,7 +127,7 @@ class LocationForegroundService : Service() {
         val req = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
             .setWaitForAccurateLocation(true)
             .setMinUpdateIntervalMillis(500)
-            .setMaxUpdateDelayMillis(2000L)   // ← NEW: Maps-style max delay
+            .setMaxUpdateDelayMillis(2000L)
             .setDurationMillis(25_000)
             .build()
 
@@ -154,7 +154,7 @@ class LocationForegroundService : Service() {
             }
         }, 20_000)
 
-        return START_REDELIVER_INTENT  // ← CHANGED: restarts with same intent if killed by OEM
+        return START_REDELIVER_INTENT
     }
 
     private fun deliver(location: Location, source: String) {
@@ -235,11 +235,10 @@ class LocationForegroundService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("Anchor")
             .setContentText("Acquiring location...")
-            .setSmallIcon(R.drawable.ic_launcher_foreground)
+            .setSmallIcon(android.R.drawable.ic_menu_mylocation)
             .setContentIntent(pi)
             .setOngoing(true)
-            .setPriority(NotificationCompat.PRIORITY_HIGH)  // ← NEW: Maps-level priority
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
             .build()
     }
 }
-
