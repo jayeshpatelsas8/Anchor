@@ -13,6 +13,7 @@ import android.util.Log
 import androidx.core.app.ActivityCompat
 import com.supernova.anchor.BuildConfig
 import com.supernova.anchor.R
+import com.supernova.anchor.service.LocationForegroundService
 import com.supernova.anchor.service.OverlayDisplayService
 import java.io.IOException
 import java.text.SimpleDateFormat
@@ -30,114 +31,82 @@ class SmsCommandProcessor(private val context: Context) {
 
     companion object {
         private const val TAG = "SmsCommandProcessor"
-
-        // Command constants
-        const val COMMAND_LOCATE = "locate"
-        const val COMMAND_RING = "ring"
-        const val COMMAND_INFO = "info"
-        const val COMMAND_HELP = "help"
-        const val COMMAND_CALLME = "callme"
-        const val COMMAND_SOUND = "sound"
-        const val COMMAND_PING = "ping"
     }
 
     private val appSettings = AppSettings(context)
     private val soundModeManager = SoundModeManager(context)
 
     fun processCommand(rawCommand: String, senderNumber: String) {
-        if (BuildConfig.DEBUG) {
-            Log.d(TAG, "Processing command from: $senderNumber")
-        }
+        DebugLogger.init(context)
+        DebugLogger.log(TAG, "---------- START ----------")
+        DebugLogger.log(TAG, "Raw: '$rawCommand' | Sender: $senderNumber")
 
-        // Get the command password and prefix
         val commandPassword = appSettings.getString(AppSettings.SMS_COMMAND_PASSWORD)
         val commandPrefix = appSettings.getString(AppSettings.SMS_COMMAND_PREFIX)
 
-        // Split the raw command by whitespace to extract actual command and parameters
         val parts = rawCommand.trim().split("\\s+".toRegex())
+        DebugLogger.log(TAG, "Parts: $parts")
 
-        // We expect at least command and password
         if (parts.size < 2) {
-            val errorMessage = context.getString(R.string.missing_password, commandPrefix)
-            sendSmsResponse(senderNumber, errorMessage)
+            DebugLogger.log(TAG, "ERROR: Missing password")
+            sendSmsResponse(senderNumber, context.getString(R.string.missing_password, commandPrefix))
             return
         }
 
         val command = parts[0].lowercase(Locale.ROOT)
         val password = parts[1]
+        DebugLogger.log(TAG, "Command='$command' | Password attempt='$password'")
 
-        // Check if the password is correct
         if (password != commandPassword) {
-            if (BuildConfig.DEBUG) {
-                Log.w(TAG, "Invalid password attempt from: $senderNumber")
-            }
+            DebugLogger.log(TAG, "ERROR: Invalid password")
             sendSmsResponse(senderNumber, context.getString(R.string.invalid_password))
             return
         }
+        DebugLogger.log(TAG, "Password OK")
 
-        // Process the command with remaining parameters
         val params = if (parts.size > 2) parts.subList(2, parts.size) else emptyList()
-        processVerifiedCommand(command, params, senderNumber)
-    }
+        DebugLogger.log(TAG, "Params: $params")
 
-    private fun processVerifiedCommand(command: String, params: List<String>, senderNumber: String) {
         when (command) {
-            COMMAND_LOCATE -> handleLocateCommand(senderNumber)
-            COMMAND_RING -> handleRingCommand()
-            COMMAND_INFO -> handleInfoCommand(senderNumber)
-            COMMAND_HELP -> handleHelpCommand(senderNumber)
-            COMMAND_CALLME -> handleCallMeCommand(senderNumber)
-            COMMAND_SOUND -> handleSoundCommand(senderNumber, params)
-            COMMAND_PING -> handlePingCommand(senderNumber)
-            else -> sendSmsResponse(senderNumber, context.getString(R.string.unknown_command))
-        }
-    }
-   
-    private fun handleLocateCommand(senderNumber: String) {
-        LocationUtils(context).getCurrentLocation { location, source ->
-            if (location != null) {
-                val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd HH:mm:ss", java.util.Locale.getDefault())
-                val locationTime = dateFormat.format(java.util.Date(location.time))
-
-                val locationMessage = context.getString(
-                    R.string.device_location,
-                    location.latitude,
-                    location.longitude
-                )
-                val googleMapsLink = "https://maps.google.com/maps?q=${location.latitude},${location.longitude}"
-                val timeNote = "\nRecorded: $locationTime"
-                val sourceNote = "\nSource: $source"
-
-                sendSmsResponse(senderNumber, "$locationMessage\n$googleMapsLink$timeNote$sourceNote")
-            } else {
-                sendSmsResponse(senderNumber, "Location unavailable. GPS failed and no cached location found.")
+            "locate" -> {
+                DebugLogger.log(TAG, ">>> LOCATE: Starting foreground service")
+                LocationForegroundService.start(context, senderNumber)
+            }
+            "ring" -> handleRingCommand()
+            "info" -> handleInfoCommand(senderNumber)
+            "help" -> handleHelpCommand(senderNumber)
+            "callme" -> handleCallMeCommand(senderNumber)
+            "sound" -> handleSoundCommand(senderNumber, params)
+            "ping" -> handlePingCommand(senderNumber)
+            else -> {
+                DebugLogger.log(TAG, "ERROR: Unknown command '$command'")
+                sendSmsResponse(senderNumber, context.getString(R.string.unknown_command))
             }
         }
+        DebugLogger.log(TAG, "---------- END ----------")
     }
 
-
     private fun handleRingCommand() {
+        DebugLogger.log(TAG, ">>> RING")
         try {
-            // Use the RingtonePlayer singleton to play the ringtone
             RingtonePlayer.playRingtone(context)
-
-            // Display a message on screen with dismiss button
             val intent = Intent(context, OverlayDisplayService::class.java)
             intent.putExtra("message", context.getString(R.string.ring_command_received))
-            intent.putExtra("isRingCommand", true) // Flag to identify this is from ring command
+            intent.putExtra("isRingCommand", true)
             context.startService(intent)
-
-            Log.d(TAG, "Ring command executed successfully")
+            DebugLogger.log(TAG, ">>> RING: Started")
         } catch (e: Exception) {
-            Log.e(TAG, "Error handling ring command", e)
+            DebugLogger.log(TAG, ">>> RING: ERROR ${e.message}")
         }
     }
 
     @SuppressLint("StringFormatMatches")
     private fun handleInfoCommand(senderNumber: String) {
+        DebugLogger.log(TAG, ">>> INFO")
         val batteryInfo = BatteryUtils.getBatteryPercentage(context)
         val isCharging = BatteryUtils.isCharging(context)
-        
+        DebugLogger.log(TAG, ">>> INFO: Battery=$batteryInfo% Charging=$isCharging")
+
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
         val isScreenOn = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.KITKAT_WATCH) {
             powerManager.isInteractive
@@ -145,10 +114,10 @@ class SmsCommandProcessor(private val context: Context) {
             @Suppress("DEPRECATION")
             powerManager.isScreenOn
         }
-        
+
         val dateFormat = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         val currentDateTime = dateFormat.format(Date())
-        
+
         val infoMessage = context.getString(
             R.string.device_info,
             batteryInfo,
@@ -156,15 +125,13 @@ class SmsCommandProcessor(private val context: Context) {
             if (isScreenOn) context.getString(R.string.yes) else context.getString(R.string.no),
             currentDateTime
         )
-        
+
         sendSmsResponse(senderNumber, infoMessage)
     }
-    
+
     private fun handleHelpCommand(senderNumber: String) {
-        // Get the current command prefix (don't send password for security)
+        DebugLogger.log(TAG, ">>> HELP")
         val commandPrefix = appSettings.getString(AppSettings.SMS_COMMAND_PREFIX)
-        
-        // Create a help message WITHOUT exposing the password
         val helpMessage = """
             Available commands:
             $commandPrefix locate [password] - Get device location
@@ -173,37 +140,31 @@ class SmsCommandProcessor(private val context: Context) {
             $commandPrefix callme [password] - Device calls you back
             $commandPrefix sound [password] [normal/vibrate/silent] - Change sound mode
             $commandPrefix ping [password] - Check if service is running
-            
-            Note: Replace [password] with your configured password
         """.trimIndent()
-        
         sendSmsResponse(senderNumber, helpMessage)
     }
-    
+
     private fun handleCallMeCommand(senderNumber: String) {
+        DebugLogger.log(TAG, ">>> CALLME")
         try {
-            // Create an intent to make a phone call
             val callIntent = Intent(Intent.ACTION_CALL)
             callIntent.data = Uri.parse("tel:$senderNumber")
             callIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            
-            // Check if we have the permission to make calls
-            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == 
-                    PackageManager.PERMISSION_GRANTED) {
-                // Start the call
+            if (ActivityCompat.checkSelfPermission(context, Manifest.permission.CALL_PHONE) == PackageManager.PERMISSION_GRANTED) {
                 context.startActivity(callIntent)
+                DebugLogger.log(TAG, ">>> CALLME: Started")
             } else {
+                DebugLogger.log(TAG, ">>> CALLME: Permission denied")
                 sendSmsResponse(senderNumber, context.getString(R.string.call_permission_required))
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error making call: ${e.message}")
+            DebugLogger.log(TAG, ">>> CALLME: ERROR ${e.message}")
             sendSmsResponse(senderNumber, context.getString(R.string.error_making_call))
         }
     }
-    
+
     private fun handleSoundCommand(senderNumber: String, params: List<String>) {
-        val soundModeManager = SoundModeManager(context)
-        
+        DebugLogger.log(TAG, ">>> SOUND | Params: $params")
         when {
             params.contains("normal") -> {
                 soundModeManager.setNormalMode()
@@ -223,37 +184,32 @@ class SmsCommandProcessor(private val context: Context) {
             }
         }
     }
-    
-    /**
-     * Handle the ping command which confirms that the Anchor service is running
-     */
+
     private fun handlePingCommand(senderNumber: String) {
+        DebugLogger.log(TAG, ">>> PING")
         sendSmsResponse(senderNumber, context.getString(R.string.anchor_ping_response))
     }
-    
+
     private fun sendSmsResponse(phoneNumber: String, message: String) {
+        DebugLogger.log(TAG, "SMS SEND: To=$phoneNumber Len=${message.length} Preview='${message.take(50)}...'")
         try {
-            // Use SmsManager API for Android S+ (API 31+)
             val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 context.getSystemService(SmsManager::class.java)
             } else {
                 @Suppress("DEPRECATION")
                 SmsManager.getDefault()
             }
-            
-            // If message is too long, divide it into parts
+
             if (message.length > 160) {
-                val messageParts = smsManager.divideMessage(message)
-                smsManager.sendMultipartTextMessage(phoneNumber, null, messageParts, null, null)
+                val parts = smsManager.divideMessage(message)
+                smsManager.sendMultipartTextMessage(phoneNumber, null, parts, null, null)
+                DebugLogger.log(TAG, "SMS SEND: Multipart (${parts.size} parts)")
             } else {
                 smsManager.sendTextMessage(phoneNumber, null, message, null, null)
-            }
-            
-            if (BuildConfig.DEBUG) {
-                Log.d(TAG, "SMS response sent to $phoneNumber")
+                DebugLogger.log(TAG, "SMS SEND: Single part")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Error sending SMS response", e)
+            DebugLogger.log(TAG, "SMS SEND: ERROR ${e.message}")
         }
     }
-} 
+}
