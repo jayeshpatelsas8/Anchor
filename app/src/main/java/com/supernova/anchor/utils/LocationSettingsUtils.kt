@@ -22,3 +22,4 @@ object LocationSettingsUtils {
         context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
     }
 }
+
