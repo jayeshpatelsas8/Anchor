@@ -70,6 +70,20 @@ class MainActivity : ComponentActivity() {
             appSettings.setString(AppSettings.SMS_COMMAND_PASSWORD, defaultPassword)
             Log.d("MainActivity", "Generated default SMS command password: $defaultPassword")
         }
+        // Check battery optimization — critical for background GPS survival
+        if (BatteryOptimizationUtils.isBatteryOptimizationEnabled(this)) {
+            Log.w("MainActivity", "Battery optimization is ON — may kill background GPS")
+            // Optional: show a Toast or dialog prompting user to disable it
+            // BatteryOptimizationUtils.requestExemption(this)
+        }
+
+        // Check if GPS is enabled at system level
+        if (!LocationSettingsUtils.isGpsEnabled(this)) {
+            Log.w("MainActivity", "GPS is disabled in system settings")
+            // Optional: prompt user to enable
+            // LocationSettingsUtils.openLocationSettings(this)
+        }
+
         
         setContent {
             anchorTheme {
