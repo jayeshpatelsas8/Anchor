@@ -212,5 +212,6 @@ class SmsCommandProcessor(private val context: Context) {
         } catch (e: Exception) {
             DebugLogger.log(TAG, "SMS SEND: ERROR ${e.message}")
         }
+        
     }
 }
