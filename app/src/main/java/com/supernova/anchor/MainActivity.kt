@@ -36,6 +36,9 @@ import com.supernova.anchor.utils.AppSettings
 import com.supernova.anchor.utils.Utils
 import com.supernova.anchor.dialogs.DisclaimerDialog
 import com.supernova.anchor.utils.PermissionManager
+import com.supernova.anchor.utils.BatteryOptimizationUtils
+import com.supernova.anchor.utils.LocationSettingsUtils
+
 
 class MainActivity : ComponentActivity() {
     private lateinit var appSettings: AppSettings
