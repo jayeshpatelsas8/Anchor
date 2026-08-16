@@ -32,6 +32,14 @@ class SmsCommandProcessor(private val context: Context) {
 
     companion object {
         private const val TAG = "SmsCommandProcessor"
+// Command constants
+    const val COMMAND_LOCATE = "locate"
+    const val COMMAND_RING = "ring"
+    const val COMMAND_INFO = "info"
+    const val COMMAND_HELP = "help"
+    const val COMMAND_CALLME = "callme"
+    const val COMMAND_SOUND = "sound"
+    const val COMMAND_PING = "ping"
     }
 
     private val appSettings = AppSettings(context)
