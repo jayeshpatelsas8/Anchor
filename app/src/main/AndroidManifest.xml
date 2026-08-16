@@ -2,56 +2,33 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
 
-    <!-- Essential for SMS commands functionality -->
-    <uses-permission android:name="android.permission.RECEIVE_SMS" android:protectionLevel="dangerous" />
-    <uses-permission android:name="android.permission.SEND_SMS" android:protectionLevel="dangerous" />
-    
-    <!-- Location permissions - required for locating the device -->
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" android:protectionLevel="dangerous" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:protectionLevel="dangerous" />
-    <!-- Background location is only requested when explicitly needed -->
-    <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" android:protectionLevel="dangerous" />
-
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <!-- For "callme" feature - to call back the owner -->
-    <uses-permission android:name="android.permission.CALL_PHONE" android:protectionLevel="dangerous" />
-    
-    <!-- For overlay UI during remote control -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    
-    <!-- For contact selection in whitelist - only used if user chooses to add contacts -->
-    <uses-permission android:name="android.permission.READ_CONTACTS" android:protectionLevel="dangerous" />
-    
-    <!-- For remote ringing functionality -->
-    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
- 
-     <!-- Existing permissions -->
+    <!-- SMS -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
+    
+    <!-- Location -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+    
+    <!-- Phone -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
+    
+    <!-- Overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+    
+    <!-- Contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+    
+    <!-- Audio -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     
-    <!-- NEW: Required for foreground service -->
+    <!-- Foreground service + GPS survival -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-
-    
-    <!-- Required for LocationUtils to keep CPU alive during GPS fix -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
-    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-
 
     <application
         android:allowBackup="false"
@@ -74,15 +51,6 @@
         </activity>
 
         <activity
-    android:name=".service.LocationForegroundService"
-
-android:enabled="true"
- 
-android:exported="false"
-    android:foregroundServiceType="location" />
-
-        
-        <activity
             android:name=".SettingsActivity"
             android:exported="false" />
             
@@ -94,7 +62,22 @@ android:exported="false"
             android:name=".WhitelistActivity"
             android:exported="false" />
 
-        <!-- SMS Receiver - for processing SMS commands -->
+        <activity
+            android:name=".CommandSettingsActivity"
+            android:exported="false" />
+
+        <activity
+            android:name=".AboutActivity"
+            android:exported="false" />
+
+        <!-- Foreground location service (was incorrectly declared as <activity>) -->
+        <service
+            android:name=".service.LocationForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="location" />
+
+        <!-- SMS Receiver -->
         <receiver
             android:name=".receiver.SmsReceiver"
             android:enabled="true"
@@ -105,19 +88,12 @@ android:exported="false"
             </intent-filter>
         </receiver>
 
-        <!-- Overlay Display Service - for showing alerts when device is locked/lost -->
+        <!-- Overlay service -->
         <service
             android:name=".service.OverlayDisplayService"
             android:enabled="true"
             android:exported="false" />
 
-        <activity
-            android:name=".CommandSettingsActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".AboutActivity"
-            android:exported="false" />
     </application>
 
 </manifest>
