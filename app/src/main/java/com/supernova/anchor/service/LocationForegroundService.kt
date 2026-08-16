@@ -242,3 +242,4 @@ class LocationForegroundService : Service() {
             .build()
     }
 }
+
