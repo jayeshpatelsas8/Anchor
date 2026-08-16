@@ -11,7 +11,8 @@
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" android:protectionLevel="dangerous" />
     <!-- Background location is only requested when explicitly needed -->
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" android:protectionLevel="dangerous" />
-    
+
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <!-- For "callme" feature - to call back the owner -->
     <uses-permission android:name="android.permission.CALL_PHONE" android:protectionLevel="dangerous" />
     
