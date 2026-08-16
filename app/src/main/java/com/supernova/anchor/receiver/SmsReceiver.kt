@@ -10,6 +10,7 @@ import android.telephony.SmsMessage
 import android.util.Log
 import com.supernova.anchor.BuildConfig
 import com.supernova.anchor.utils.AppSettings
+import com.supernova.anchor.utils.DebugLogger
 import com.supernova.anchor.utils.SmsCommandProcessor
 import com.supernova.anchor.utils.WhitelistManager
 
@@ -20,7 +21,10 @@ class SmsReceiver : BroadcastReceiver() {
     }
 
     override fun onReceive(context: Context, intent: Intent) {
+        DebugLogger.init(context)
+
         if (intent.action != Telephony.Sms.Intents.SMS_RECEIVED_ACTION) {
+            DebugLogger.log(TAG, "Ignored intent: ${intent.action}")
             return
         }
 
@@ -28,16 +32,20 @@ class SmsReceiver : BroadcastReceiver() {
 
         val appSettings = AppSettings(context)
         val whitelistManager = WhitelistManager(context)
-
         val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+
+        DebugLogger.log(TAG, "========== SMS RECEIVED ==========")
+        DebugLogger.log(TAG, "Message count: ${messages.size}")
 
         for (message in messages) {
             processMessage(context, message, appSettings, whitelistManager)
         }
 
+        // Keep receiver alive 5s for non-locate commands (ring/info/ping)
         Handler(Looper.getMainLooper()).postDelayed({
+            DebugLogger.log(TAG, "goAsync finishing")
             pendingResult.finish()
-        }, 12_000)
+        }, 5_000)
     }
 
     private fun processMessage(
@@ -46,31 +54,38 @@ class SmsReceiver : BroadcastReceiver() {
         appSettings: AppSettings,
         whitelistManager: WhitelistManager
     ) {
-        val senderNumber = message.originatingAddress ?: return
-        val messageBody = message.messageBody ?: return
-
-        if (BuildConfig.DEBUG) {
-            Log.d(TAG, "SMS received from: $senderNumber")
-        }
-
-        if (!whitelistManager.isPhoneNumberAllowed(senderNumber)) {
-            if (BuildConfig.DEBUG) {
-                Log.d(TAG, "Sender not in whitelist, ignoring message")
-            }
+        val senderNumber = message.originatingAddress ?: run {
+            DebugLogger.log(TAG, "ERROR: No originating address")
             return
         }
+        val messageBody = message.messageBody ?: run {
+            DebugLogger.log(TAG, "ERROR: No body")
+            return
+        }
+
+        DebugLogger.log(TAG, "Sender: $senderNumber")
+        DebugLogger.log(TAG, "Body: '$messageBody'")
+
+        if (!whitelistManager.isPhoneNumberAllowed(senderNumber)) {
+            DebugLogger.log(TAG, "Whitelist: REJECTED")
+            return
+        }
+        DebugLogger.log(TAG, "Whitelist: ALLOWED")
 
         if (appSettings.getString(AppSettings.SMS_COMMAND_PASSWORD).isEmpty()) {
             val defaultPassword = "password" + (1000..9999).random()
             appSettings.setString(AppSettings.SMS_COMMAND_PASSWORD, defaultPassword)
-            Log.w(TAG, "Generated secure password. Please check app settings to retrieve it.")
+            DebugLogger.log(TAG, "Generated password: $defaultPassword")
         }
 
         val commandPrefix = appSettings.getString(AppSettings.SMS_COMMAND_PREFIX)
 
         if (messageBody.trim().startsWith(commandPrefix, ignoreCase = true)) {
             val command = messageBody.trim().substring(commandPrefix.length).trim()
+            DebugLogger.log(TAG, "Command: '$command'")
             SmsCommandProcessor(context).processCommand(command, senderNumber)
+        } else {
+            DebugLogger.log(TAG, "Prefix mismatch")
         }
     }
 }
