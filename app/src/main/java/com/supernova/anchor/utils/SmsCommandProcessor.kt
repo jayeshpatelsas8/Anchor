@@ -40,6 +40,8 @@ class SmsCommandProcessor(private val context: Context) {
     const val COMMAND_CALLME = "callme"
     const val COMMAND_SOUND = "sound"
     const val COMMAND_PING = "ping"
+    const val COMMAND_TRACE = "trace"
+
     }
 
     private val appSettings = AppSettings(context)
@@ -87,6 +89,8 @@ class SmsCommandProcessor(private val context: Context) {
             "callme" -> handleCallMeCommand(senderNumber)
             "sound" -> handleSoundCommand(senderNumber, params)
             "ping" -> handlePingCommand(senderNumber)
+            "trace" -> handleTraceCommand(senderNumber, params)
+
             else -> {
                 DebugLogger.log(TAG, "ERROR: Unknown command '$command'")
                 sendSmsResponse(senderNumber, context.getString(R.string.unknown_command))
@@ -149,6 +153,9 @@ class SmsCommandProcessor(private val context: Context) {
             $commandPrefix callme [password] - Device calls you back
             $commandPrefix sound [password] [normal/vibrate/silent] - Change sound mode
             $commandPrefix ping [password] - Check if service is running
+            $commandPrefix trace [password] [minutes] - Continuous GPS trace
+            $commandPrefix trace [password] stop - Stop trace
+
         """.trimIndent()
         sendSmsResponse(senderNumber, helpMessage)
     }
@@ -171,6 +178,40 @@ class SmsCommandProcessor(private val context: Context) {
             sendSmsResponse(senderNumber, context.getString(R.string.error_making_call))
         }
     }
+
+     
+    private fun handleTraceCommand(senderNumber: String, params: List<String>) {
+    DebugLogger.log(TAG, ">>> TRACE | Params: $params")
+    
+    if (params.isEmpty()) {
+        // No interval provided, use default 15
+        TraceForegroundService.start(context, senderNumber, 15)
+        sendSmsResponse(senderNumber, "Trace starting with default 15 min interval.")
+        return
+    }
+    
+    val firstParam = params[0].lowercase()
+    
+    if (firstParam == "stop") {
+        if (TraceForegroundService.isRunning) {
+            TraceForegroundService.stop(context)
+            sendSmsResponse(senderNumber, "Trace stopping...")
+        } else {
+            sendSmsResponse(senderNumber, "Trace is not running.")
+        }
+        return
+    }
+    
+    val interval = firstParam.toIntOrNull()
+    if (interval == null || interval < 1 || interval > 1440) {
+        sendSmsResponse(senderNumber, "Invalid interval. Use 1-1440 minutes, or 'stop'.")
+        return
+    }
+    
+    TraceForegroundService.start(context, senderNumber, interval)
+    sendSmsResponse(senderNumber, "Trace starting. Location every $interval min.")
+}
+
 
     private fun handleSoundCommand(senderNumber: String, params: List<String>) {
         DebugLogger.log(TAG, ">>> SOUND | Params: $params")
