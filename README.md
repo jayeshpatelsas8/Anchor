@@ -7,6 +7,18 @@
 
 ---
 
+
+edit :
+test on OnePlus 9 running android 11 
+
+this fork 
+1) implement force gps refresh to get latest location 
+2) fixes info options battery percentage 
+3) implement powerful trace options to trace every x minute 
+
+
+
+
 A privacy-focused Android application that enables you to locate and control your lost or stolen device remotely via SMS commands. No internet required, no servers involved - just direct SMS communication between your devices.
 
 ## Purpose
