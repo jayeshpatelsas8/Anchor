@@ -15,8 +15,6 @@ import com.supernova.anchor.BuildConfig
 import com.supernova.anchor.R
 import com.supernova.anchor.service.LocationForegroundService
 import com.supernova.anchor.service.OverlayDisplayService
-import com.supernova.anchor.service.LocationForegroundService
-import com.supernova.anchor.service.OverlayDisplayService
 import com.supernova.anchor.service.TraceForegroundService
 import java.io.IOException
 import java.text.SimpleDateFormat
