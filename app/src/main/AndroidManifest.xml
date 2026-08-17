@@ -94,6 +94,15 @@
             android:enabled="true"
             android:exported="false" />
 
+<service
+    android:name=".service.TraceForegroundService"
+    android:enabled="true"
+    android:exported="false"
+    android:foregroundServiceType="location" />
+
+
     </application>
+
+
 
 </manifest>
