@@ -149,6 +149,30 @@ $mapsLink""".trimIndent()
     }
 
     private fun sendSms(phoneNumber: String, message: String) {
+        com.supernova.anchor.data.MessageRepository.addMessage(
+            applicationContext,
+            com.supernova.anchor.data.ChatMessage(
+                id = java.util.UUID.randomUUID().toString(),
+                text = message,
+                sender = phoneNumber,
+                timestamp = System.currentTimeMillis(),
+                isIncoming = false
+            )
+        )
+
+        when (val result = com.supernova.anchor.utils.DataSmsSender.send(applicationContext, phoneNumber, message)) {
+            is com.supernova.anchor.utils.DataSmsSender.Result.Sent -> {
+                DebugLogger.log(TAG, "Trace SMS sent as data SMS")
+            }
+            is com.supernova.anchor.utils.DataSmsSender.Result.TooLong,
+            is com.supernova.anchor.utils.DataSmsSender.Result.Failed -> {
+                DebugLogger.log(TAG, "Trace SMS: data SMS not sent ($result), falling back to text SMS")
+                sendRegularTextSmsFallback(phoneNumber, message)
+            }
+        }
+    }
+
+    private fun sendRegularTextSmsFallback(phoneNumber: String, message: String) {
         try {
             val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 getSystemService(SmsManager::class.java)
