@@ -242,7 +242,39 @@ class SmsCommandProcessor(private val context: Context) {
     }
 
     private fun sendSmsResponse(phoneNumber: String, message: String) {
-        DebugLogger.log(TAG, "SMS SEND: To=$phoneNumber Len=${message.length} Preview='${message.take(50)}...'")
+        DebugLogger.log(TAG, "RESPONSE: To=$phoneNumber Len=${message.length} Preview='${message.take(50)}...'")
+
+        com.supernova.anchor.data.MessageRepository.addMessage(
+            context,
+            com.supernova.anchor.data.ChatMessage(
+                id = java.util.UUID.randomUUID().toString(),
+                text = message,
+                sender = phoneNumber,
+                timestamp = System.currentTimeMillis(),
+                isIncoming = false
+            )
+        )
+
+        // Try data SMS first (port 15000) so the reply auto-appears in the
+        // sender's Binary Mode thread. Falls back to regular text SMS if the
+        // payload is too long for a single data-SMS segment — see
+        // DataSmsSender's doc comment for why there's no multipart here.
+        when (val result = DataSmsSender.send(context, phoneNumber, message)) {
+            is DataSmsSender.Result.Sent -> {
+                DebugLogger.log(TAG, "RESPONSE: sent as data SMS")
+            }
+            is DataSmsSender.Result.TooLong -> {
+                DebugLogger.log(TAG, "RESPONSE: ${result.actualBytes}B too long for data SMS, falling back to text SMS")
+                sendRegularTextSmsFallback(phoneNumber, message)
+            }
+            is DataSmsSender.Result.Failed -> {
+                DebugLogger.log(TAG, "RESPONSE: data SMS failed (${result.reason}), falling back to text SMS")
+                sendRegularTextSmsFallback(phoneNumber, message)
+            }
+        }
+    }
+
+    private fun sendRegularTextSmsFallback(phoneNumber: String, message: String) {
         try {
             val smsManager = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 context.getSystemService(SmsManager::class.java)
@@ -254,14 +286,13 @@ class SmsCommandProcessor(private val context: Context) {
             if (message.length > 160) {
                 val parts = smsManager.divideMessage(message)
                 smsManager.sendMultipartTextMessage(phoneNumber, null, parts, null, null)
-                DebugLogger.log(TAG, "SMS SEND: Multipart (${parts.size} parts)")
+                DebugLogger.log(TAG, "FALLBACK SMS: Multipart (${parts.size} parts)")
             } else {
                 smsManager.sendTextMessage(phoneNumber, null, message, null, null)
-                DebugLogger.log(TAG, "SMS SEND: Single part")
+                DebugLogger.log(TAG, "FALLBACK SMS: Single part")
             }
         } catch (e: Exception) {
-            DebugLogger.log(TAG, "SMS SEND: ERROR ${e.message}")
+            DebugLogger.log(TAG, "FALLBACK SMS: ERROR ${e.message}")
         }
-        
     }
 }
