@@ -166,7 +166,8 @@ class LocationForegroundService : Service() {
         val time = df.format(Date(location.time))
         val ageSec = (System.currentTimeMillis() - location.time) / 1000
 
-        val msg = buildString {
+        // Full version for the regular-SMS fallback (human-friendly, no size limit).
+        val fullMsg = buildString {
             appendLine("Device location:")
             appendLine("Lat: ${location.latitude}, Lng: ${location.longitude}")
             appendLine("https://maps.google.com/maps?q=${location.latitude},${location.longitude}")
@@ -175,7 +176,13 @@ class LocationForegroundService : Service() {
             if (source != "GPS") appendLine("\n[FALLBACK: age=${ageSec}s]") else appendLine()
         }
 
-        sendSms(senderNumber, msg)
+        // Trimmed version that fits a single data-SMS segment (~133 bytes),
+        // so a normal locate reply can round-trip through Binary Mode without
+        // falling back to a regular SMS. Just the link — that's the part that
+        // matters for a tracker.
+        val compactMsg = "Loc(${source}): https://maps.google.com/maps?q=${location.latitude},${location.longitude}"
+
+        sendSms(senderNumber, compactMsg, fullFallback = fullMsg)
         cleanup()
         stopSelf()
     }
@@ -189,7 +196,37 @@ class LocationForegroundService : Service() {
         stopSelf()
     }
 
-    private fun sendSms(number: String, text: String) {
+    /**
+     * Sends the compact message as data SMS on Anchor's command port (so it
+     * auto-appears in the sender's Binary Mode thread). If it's still too
+     * long, or the data SMS send fails, falls back to [fullFallback] (or
+     * [text] if no fallback given) as a regular text SMS.
+     */
+    private fun sendSms(number: String, text: String, fullFallback: String? = null) {
+        com.supernova.anchor.data.MessageRepository.addMessage(
+            applicationContext,
+            com.supernova.anchor.data.ChatMessage(
+                id = java.util.UUID.randomUUID().toString(),
+                text = fullFallback ?: text,
+                sender = number,
+                timestamp = System.currentTimeMillis(),
+                isIncoming = false
+            )
+        )
+
+        when (val result = com.supernova.anchor.utils.DataSmsSender.send(applicationContext, number, text)) {
+            is com.supernova.anchor.utils.DataSmsSender.Result.Sent -> {
+                DebugLogger.log(TAG, "SMS sent to $number as data SMS")
+            }
+            is com.supernova.anchor.utils.DataSmsSender.Result.TooLong,
+            is com.supernova.anchor.utils.DataSmsSender.Result.Failed -> {
+                DebugLogger.log(TAG, "SMS: data SMS not sent ($result), falling back to text SMS")
+                sendRegularTextSmsFallback(number, fullFallback ?: text)
+            }
+        }
+    }
+
+    private fun sendRegularTextSmsFallback(number: String, text: String) {
         try {
             val sms = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
                 getSystemService(SmsManager::class.java)
@@ -203,7 +240,7 @@ class LocationForegroundService : Service() {
             } else {
                 sms.sendTextMessage(number, null, text, null, null)
             }
-            DebugLogger.log(TAG, "SMS sent to $number")
+            DebugLogger.log(TAG, "Fallback text SMS sent to $number")
         } catch (e: Exception) {
             DebugLogger.log(TAG, "SMS send failed: ${e.message}")
         }
