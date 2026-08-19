@@ -19,6 +19,12 @@ class AppSettings(private val context: Context) {
         const val WHITELISTED_NUMBERS = "whitelisted_numbers"
         const val USE_WHITELIST = "use_whitelist"
         const val HAS_SEEN_DISCLAIMER = "has_seen_disclaimer"
+        // Port that binary/data SMS commands are addressed to.
+        // NOTE: This value is for display/reference only. The actual port a
+        // manifest-declared receiver listens on is fixed at compile time
+        // (see DataSmsReceiver.DATA_SMS_PORT + AndroidManifest.xml <data android:port>).
+        // Changing this setting alone will NOT change what port is received on.
+        const val DATA_SMS_PORT = "data_sms_port"
     }
     
     fun setString(key: String, value: String) {
@@ -66,7 +72,8 @@ class AppSettings(private val context: Context) {
             WHITELISTED_NUMBERS -> emptySet<String>()
             USE_WHITELIST -> false
             HAS_SEEN_DISCLAIMER -> false
+            DATA_SMS_PORT -> "15000"
             else -> ""
         }
     }
-} 
+}
