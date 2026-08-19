@@ -79,6 +79,10 @@
             android:name=".AboutActivity"
             android:exported="false" />
 
+        <activity
+            android:name=".ChatActivity"
+            android:exported="false" />
+
         <!-- Services -->
         <service
             android:name=".service.LocationForegroundService"
@@ -105,6 +109,28 @@
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
+            </intent-filter>
+        </receiver>
+
+        <!--
+            Binary/data SMS receiver — port must match DataSmsReceiver.DATA_SMS_PORT.
+            No INTERNET permission needed: data SMS travels over the same cellular
+            signaling channel as regular SMS, just addressed to a port instead of
+            being plain text. This is a manifest-declared receiver so it wakes
+            the app even if it was killed, same as SmsReceiver.
+        -->
+        <receiver
+            android:name=".receiver.DataSmsReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.BROADCAST_SMS">
+            <intent-filter>
+                <action android:name="android.intent.action.DATA_SMS_RECEIVED" />
+
+                <data
+                    android:scheme="sms"
+                    android:host="localhost"
+                    android:port="15000" />
             </intent-filter>
         </receiver>
 
