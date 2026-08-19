@@ -9,12 +9,13 @@
 
 
 edit :
-test on OnePlus 9 running android 11 
+tested on OnePlus 9 running android 11 
 
 this fork 
-1) implement force gps refresh to get latest location 
+1) implemented force gps refresh to get latest location 
 2) fixes info options battery percentage 
 3) implement powerful trace options to trace every x minute 
+4)  binary data text mode 
 
 
 
