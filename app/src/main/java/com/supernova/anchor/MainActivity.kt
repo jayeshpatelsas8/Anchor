@@ -106,6 +106,7 @@ class MainActivity : ComponentActivity() {
                 MainScreen(
                     onSettingsClick = { navigateToSettings() },
                     onPermissionsClick = { navigateToPermissions() },
+                    onMessagesClick = { navigateToMessages() },
                     onOverlayPermissionRequest = { permissionManager.requestOverlayPermission() }
                 )
             }
@@ -121,6 +122,11 @@ class MainActivity : ComponentActivity() {
         val intent = Intent(this, PermissionsActivity::class.java)
         startActivity(intent)
     }
+
+    private fun navigateToMessages() {
+        val intent = Intent(this, ChatActivity::class.java)
+        startActivity(intent)
+    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -128,6 +134,7 @@ class MainActivity : ComponentActivity() {
 fun MainScreen(
     onSettingsClick: () -> Unit,
     onPermissionsClick: () -> Unit,
+    onMessagesClick: () -> Unit,
     onOverlayPermissionRequest: () -> Unit
 ) {
     val context = LocalContext.current
@@ -196,7 +203,18 @@ fun MainScreen(
             
             // Spacing between buttons
             Spacer(modifier = Modifier.height(16.dp))
-            
+
+            Button(
+                onClick = onMessagesClick,
+                modifier = Modifier
+                    .padding(8.dp)
+                    .fillMaxWidth(0.8f)
+            ) {
+                Text("Binary Mode")
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             Button(
                 onClick = onSettingsClick,
                 modifier = Modifier
