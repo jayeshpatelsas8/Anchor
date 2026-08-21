@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Primary app-specific external storage (most devices without a
+         physical removable SD card land here — see DebugLogger.kt). -->
+    <external-files-path name="external_files" path="." />
+
+    <!--
+        Catch-all for a genuine removable SD card's app-specific directory.
+        Its exact mount point (e.g. /storage/XXXX-XXXX/Android/data/...) is
+        assigned by the OS per-device and isn't knowable at build time.
+
+        Anchor only ever calls FileProvider.getUriForFile() on paths that
+        come from DebugLogger's own resolveLogBaseDir()/getDebugDir() — i.e.
+        its own app-specific directories, never arbitrary device paths — so
+        this broad root-path stays scoped in practice to files Anchor itself
+        created, even though the declared path is unrestricted.
+    -->
+    <root-path name="all_files" path="." />
+</paths>
