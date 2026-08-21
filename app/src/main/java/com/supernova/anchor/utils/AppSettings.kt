@@ -25,6 +25,9 @@ class AppSettings(private val context: Context) {
         // (see DataSmsReceiver.DATA_SMS_PORT + AndroidManifest.xml <data android:port>).
         // Changing this setting alone will NOT change what port is received on.
         const val DATA_SMS_PORT = "data_sms_port"
+        // SAF tree Uri (as a string) for a user-chosen debug log folder.
+        // Empty = use DebugLogger's auto-detected default location.
+        const val DEBUG_FOLDER_TREE_URI = "debug_folder_tree_uri"
     }
     
     fun setString(key: String, value: String) {
@@ -73,6 +76,7 @@ class AppSettings(private val context: Context) {
             USE_WHITELIST -> false
             HAS_SEEN_DISCLAIMER -> false
             DATA_SMS_PORT -> "15000"
+            DEBUG_FOLDER_TREE_URI -> ""
             else -> ""
         }
     }
