@@ -83,7 +83,7 @@ class SmsReceiver : BroadcastReceiver() {
         if (messageBody.trim().startsWith(commandPrefix, ignoreCase = true)) {
             val command = messageBody.trim().substring(commandPrefix.length).trim()
             DebugLogger.log(TAG, "Command: '$command'")
-            SmsCommandProcessor(context).processCommand(command, senderNumber)
+            SmsCommandProcessor(context).processCommand(command, senderNumber, com.supernova.anchor.utils.ReplyChannel.TEXT)
         } else {
             DebugLogger.log(TAG, "Prefix mismatch")
         }
