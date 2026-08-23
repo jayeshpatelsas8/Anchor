@@ -37,9 +37,10 @@ class LocationForegroundService : Service() {
         private const val NOTIF_ID = 9999
         private const val CHANNEL_ID = "anchor_location_channel"
 
-        fun start(context: Context, senderNumber: String) {
+        fun start(context: Context, senderNumber: String, replyChannel: com.supernova.anchor.utils.ReplyChannel) {
             val intent = Intent(context, LocationForegroundService::class.java).apply {
                 putExtra("sender", senderNumber)
+                putExtra("reply_channel", replyChannel.name)
             }
             context.startForegroundService(intent)
         }
@@ -50,7 +51,13 @@ class LocationForegroundService : Service() {
     private var delivered = false
     private var bestLocation: Location? = null
     private var bestSource = "FAILED"
+    // Tracked independently of bestLocation/bestSource above (which only
+    // remembers whichever source is currently winning) so the final report
+    // can show BOTH sources' own best reading, even the one that lost.
+    private var bestGpsLocation: Location? = null
+    private var bestFusedLocation: Location? = null
     private lateinit var senderNumber: String
+    private var replyChannel: com.supernova.anchor.utils.ReplyChannel = com.supernova.anchor.utils.ReplyChannel.TEXT
 
     private val fusedClient by lazy { LocationServices.getFusedLocationProviderClient(this) }
 
@@ -66,8 +73,11 @@ class LocationForegroundService : Service() {
             stopSelf()
             return START_REDELIVER_INTENT
         }
+        replyChannel = intent.getStringExtra("reply_channel")
+            ?.let { runCatching { com.supernova.anchor.utils.ReplyChannel.valueOf(it) }.getOrNull() }
+            ?: com.supernova.anchor.utils.ReplyChannel.TEXT
 
-        DebugLogger.log(TAG, ">>> START for $senderNumber")
+        DebugLogger.log(TAG, ">>> START for $senderNumber via $replyChannel")
 
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(
@@ -85,6 +95,9 @@ class LocationForegroundService : Service() {
                 if (!delivered) {
                     val ageSec = (System.currentTimeMillis() - loc.time) / 1000
                     DebugLogger.log(TAG, "Raw GPS: acc=${loc.accuracy}m age=${ageSec}s")
+                    if (bestGpsLocation == null || loc.accuracy < bestGpsLocation!!.accuracy) {
+                        bestGpsLocation = loc
+                    }
                     if (bestLocation == null || loc.accuracy < bestLocation!!.accuracy) {
                         bestLocation = loc
                         bestSource = "GPS"
@@ -116,6 +129,9 @@ class LocationForegroundService : Service() {
                     val loc = r.lastLocation ?: return
                     val ageSec = (System.currentTimeMillis() - loc.time) / 1000
                     DebugLogger.log(TAG, "Fused: acc=${loc.accuracy}m age=${ageSec}s")
+                    if (bestFusedLocation == null || loc.accuracy < bestFusedLocation!!.accuracy) {
+                        bestFusedLocation = loc
+                    }
                     if (bestLocation == null || loc.accuracy < bestLocation!!.accuracy) {
                         bestLocation = loc
                         bestSource = if (ageSec < 30) "FUSED" else "CACHE"
@@ -166,23 +182,70 @@ class LocationForegroundService : Service() {
         val time = df.format(Date(location.time))
         val ageSec = (System.currentTimeMillis() - location.time) / 1000
 
-        // Full version for the regular-SMS fallback (human-friendly, no size limit).
-        val fullMsg = buildString {
+        // The source that WASN'T delivered, if it produced any reading at
+        // all — reported regardless of how poor its accuracy is. Nothing
+        // gets silently dropped just because it lost the race in deliver().
+        // (source is "GPS", "FUSED", or "CACHE"; CACHE only happens on the
+        // full-timeout last-resort path, where there's no "other" reading
+        // to compare against, so it just falls through to null below.)
+        val other: Location? = when (source) {
+            "GPS" -> bestFusedLocation
+            "FUSED", "CACHE" -> bestGpsLocation
+            else -> null
+        }
+        val otherLabel = if (source == "GPS") "Fused" else "GPS"
+
+        // ONE canonical message — same content regardless of which channel
+        // ends up carrying it. sendSms() replies on whichever channel the
+        // original command arrived on (see sendSms's doc comment) — the
+        // content itself never changes based on transport.
+        val report = buildString {
             appendLine("Device location:")
             appendLine("Lat: ${location.latitude}, Lng: ${location.longitude}")
             appendLine("https://maps.google.com/maps?q=${location.latitude},${location.longitude}")
             appendLine("Recorded: $time")
-            append("Source: $source")
-            if (source != "GPS") appendLine("\n[FALLBACK: age=${ageSec}s]") else appendLine()
+            appendLine("Source: $source")
+            appendLine("Accuracy: \u00b1${"%.1f".format(location.accuracy)}m")
+            if (source != "GPS") appendLine("[FALLBACK: age=${ageSec}s]")
+            if (other != null) {
+                val otherAgeSec = (System.currentTimeMillis() - other.time) / 1000
+                appendLine()
+                appendLine("Also received ($otherLabel, not used):")
+                appendLine("Lat: ${other.latitude}, Lng: ${other.longitude}")
+                appendLine("https://maps.google.com/maps?q=${other.latitude},${other.longitude}")
+                appendLine("Recorded: ${df.format(Date(other.time))}")
+                append("Accuracy: \u00b1${"%.1f".format(other.accuracy)}m (age=${otherAgeSec}s)")
+            }
+        }.trimEnd()
+
+        // Same information as [report] above, laid out as natural fields
+        // instead of one long string — for the DATA channel, so a multi-part
+        // reply splits at meaningful boundaries (the link is whole, the date
+        // is whole, the source line is whole) rather than an arbitrary byte
+        // cut through the middle of one. The coordinate line is dropped here
+        // specifically because the maps link already carries the same
+        // lat/lng in its query string — no need to send it twice when every
+        // extra field is its own SMS. sendSms() below only uses this list
+        // when replyChannel is DATA; TEXT still sends the unified [report].
+        val dataParts = buildList {
+            add("https://maps.google.com/maps?q=${location.latitude},${location.longitude}")
+            add("Recorded: $time")
+            add(
+                buildString {
+                    append("Source: $source, Accuracy: \u00b1${"%.1f".format(location.accuracy)}m")
+                    if (source != "GPS") append(" [FALLBACK age=${ageSec}s]")
+                }
+            )
+            if (other != null) {
+                val otherAgeSec = (System.currentTimeMillis() - other.time) / 1000
+                add(
+                    "Also($otherLabel): https://maps.google.com/maps?q=${other.latitude},${other.longitude} " +
+                        "\u00b1${"%.1f".format(other.accuracy)}m @${df.format(Date(other.time))} (age=${otherAgeSec}s)"
+                )
+            }
         }
 
-        // Trimmed version that fits a single data-SMS segment (~133 bytes),
-        // so a normal locate reply can round-trip through Binary Mode without
-        // falling back to a regular SMS. Just the link — that's the part that
-        // matters for a tracker.
-        val compactMsg = "Loc(${source}): https://maps.google.com/maps?q=${location.latitude},${location.longitude}"
-
-        sendSms(senderNumber, compactMsg, fullFallback = fullMsg)
+        sendSms(senderNumber, report, dataParts)
         cleanup()
         stopSelf()
     }
@@ -197,31 +260,49 @@ class LocationForegroundService : Service() {
     }
 
     /**
-     * Sends the compact message as data SMS on Anchor's command port (so it
-     * auto-appears in the sender's Binary Mode thread). If it's still too
-     * long, or the data SMS send fails, falls back to [fullFallback] (or
-     * [text] if no fallback given) as a regular text SMS.
+     * Replies on whichever channel the original command arrived on
+     * ([replyChannel], set in onStartCommand from the "reply_channel"
+     * extra) — deterministic, not a data-then-fallback choice. The local
+     * echo and the TEXT-channel send always use the unified [text]; the
+     * DATA channel uses [dataParts] (natural field boundaries) when given,
+     * so a multi-part reply splits at meaningful points instead of an
+     * arbitrary byte cut — falls back to byte-chopping [text] itself only
+     * if [dataParts] wasn't provided. A genuine send failure on the DATA
+     * channel still falls back to text SMS so nothing is silently dropped.
      */
-    private fun sendSms(number: String, text: String, fullFallback: String? = null) {
+    private fun sendSms(number: String, text: String, dataParts: List<String>? = null) {
         com.supernova.anchor.data.MessageRepository.addMessage(
             applicationContext,
             com.supernova.anchor.data.ChatMessage(
                 id = java.util.UUID.randomUUID().toString(),
-                text = fullFallback ?: text,
+                text = text,
                 sender = number,
                 timestamp = System.currentTimeMillis(),
                 isIncoming = false
             )
         )
 
-        when (val result = com.supernova.anchor.utils.DataSmsSender.send(applicationContext, number, text)) {
-            is com.supernova.anchor.utils.DataSmsSender.Result.Sent -> {
-                DebugLogger.log(TAG, "SMS sent to $number as data SMS")
-            }
-            is com.supernova.anchor.utils.DataSmsSender.Result.TooLong,
-            is com.supernova.anchor.utils.DataSmsSender.Result.Failed -> {
-                DebugLogger.log(TAG, "SMS: data SMS not sent ($result), falling back to text SMS")
-                sendRegularTextSmsFallback(number, fullFallback ?: text)
+        when (replyChannel) {
+            com.supernova.anchor.utils.ReplyChannel.TEXT -> sendRegularTextSmsFallback(number, text)
+            com.supernova.anchor.utils.ReplyChannel.DATA -> {
+                val result = if (dataParts != null) {
+                    com.supernova.anchor.utils.DataSmsSender.sendParts(applicationContext, number, dataParts)
+                } else {
+                    com.supernova.anchor.utils.DataSmsSender.send(applicationContext, number, text)
+                }
+                when (result) {
+                    is com.supernova.anchor.utils.DataSmsSender.Result.Sent -> {
+                        DebugLogger.log(TAG, "SMS sent to $number as data SMS (${result.parts} part(s))")
+                    }
+                    is com.supernova.anchor.utils.DataSmsSender.Result.PartialFailure -> {
+                        DebugLogger.log(TAG, "SMS: only ${result.sentParts}/${result.totalParts} parts sent (${result.reason}), sending full text SMS as a clean retry")
+                        sendRegularTextSmsFallback(number, text)
+                    }
+                    is com.supernova.anchor.utils.DataSmsSender.Result.Failed -> {
+                        DebugLogger.log(TAG, "SMS: data SMS send failed (${result.reason}), sending as text SMS instead so it isn't dropped")
+                        sendRegularTextSmsFallback(number, text)
+                    }
+                }
             }
         }
     }
