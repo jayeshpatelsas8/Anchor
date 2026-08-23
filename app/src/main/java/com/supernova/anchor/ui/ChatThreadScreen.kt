@@ -126,8 +126,8 @@ fun ChatThreadScreen(threadKey: String, onBackClick: () -> Unit) {
                             input = ""
                             sendError = null
                         }
-                        is DataSmsSender.Result.TooLong ->
-                            sendError = "Too long for a binary message (${result.actualBytes}B, limit ${DataSmsSender.MAX_PAYLOAD_BYTES}B)."
+                        is DataSmsSender.Result.PartialFailure ->
+                            sendError = "Only ${result.sentParts}/${result.totalParts} parts sent (${result.reason}). Try again."
                         is DataSmsSender.Result.Failed ->
                             sendError = "Send failed: ${result.reason}"
                     }
