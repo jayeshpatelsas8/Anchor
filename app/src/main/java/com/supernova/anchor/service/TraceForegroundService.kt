@@ -163,20 +163,19 @@ $mapsLink""".trimIndent()
      * it goes out as text SMS instead of being silently dropped.
      */
     private fun sendSms(phoneNumber: String, message: String) {
-        com.supernova.anchor.data.MessageRepository.addMessage(
-            applicationContext,
-            com.supernova.anchor.data.ChatMessage(
-                id = java.util.UUID.randomUUID().toString(),
-                text = message,
-                sender = phoneNumber,
-                timestamp = System.currentTimeMillis(),
-                isIncoming = false
-            )
-        )
-
         when (replyChannel) {
             com.supernova.anchor.utils.ReplyChannel.TEXT -> sendRegularTextSmsFallback(phoneNumber, message)
             com.supernova.anchor.utils.ReplyChannel.DATA -> {
+                com.supernova.anchor.data.MessageRepository.addMessage(
+                    applicationContext,
+                    com.supernova.anchor.data.ChatMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        text = message,
+                        sender = phoneNumber,
+                        timestamp = System.currentTimeMillis(),
+                        isIncoming = false
+                    )
+                )
                 when (val result = com.supernova.anchor.utils.DataSmsSender.send(applicationContext, phoneNumber, message)) {
                     is com.supernova.anchor.utils.DataSmsSender.Result.Sent -> {
                         DebugLogger.log(TAG, "Trace SMS sent as data SMS (${result.parts} part(s))")
