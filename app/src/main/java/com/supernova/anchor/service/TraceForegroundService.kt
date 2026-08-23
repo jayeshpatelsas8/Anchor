@@ -39,18 +39,21 @@ class TraceForegroundService : Service() {
 
         private var senderNumber: String = ""
         private var intervalMinutes: Int = 15
+        private var replyChannel: com.supernova.anchor.utils.ReplyChannel = com.supernova.anchor.utils.ReplyChannel.TEXT
 
-        fun start(context: Context, number: String, interval: Int) {
+        fun start(context: Context, number: String, interval: Int, channel: com.supernova.anchor.utils.ReplyChannel) {
             if (isRunning) {
                 senderNumber = number
                 intervalMinutes = interval
-                DebugLogger.log(TAG, "Trace updated: interval=$interval min")
+                replyChannel = channel
+                DebugLogger.log(TAG, "Trace updated: interval=$interval min, channel=$channel")
                 return
             }
             val intent = Intent(context, TraceForegroundService::class.java).apply {
                 action = ACTION_START
                 putExtra("sender_number", number)
                 putExtra("interval_minutes", interval)
+                putExtra("reply_channel", channel.name)
             }
             context.startForegroundService(intent)
         }
@@ -79,6 +82,9 @@ class TraceForegroundService : Service() {
             ACTION_START -> {
                 senderNumber = intent.getStringExtra("sender_number") ?: return START_NOT_STICKY
                 intervalMinutes = intent.getIntExtra("interval_minutes", 15)
+                replyChannel = intent.getStringExtra("reply_channel")
+                    ?.let { runCatching { com.supernova.anchor.utils.ReplyChannel.valueOf(it) }.getOrNull() }
+                    ?: com.supernova.anchor.utils.ReplyChannel.TEXT
                 startTrace()
             }
             ACTION_STOP -> {
@@ -148,6 +154,14 @@ $mapsLink""".trimIndent()
         DebugLogger.log(TAG, "Trace SMS: ${loc.latitude},${loc.longitude}")
     }
 
+    /**
+     * Replies on whichever channel the trace command arrived on
+     * ([replyChannel], updated every time start() is called — including
+     * re-invocation to change the interval). Deterministic, same as
+     * LocationForegroundService.sendSms(). The hard ~133-byte data-SMS
+     * single-segment ceiling is the one exception: undeliverable there, so
+     * it goes out as text SMS instead of being silently dropped.
+     */
     private fun sendSms(phoneNumber: String, message: String) {
         com.supernova.anchor.data.MessageRepository.addMessage(
             applicationContext,
@@ -160,14 +174,22 @@ $mapsLink""".trimIndent()
             )
         )
 
-        when (val result = com.supernova.anchor.utils.DataSmsSender.send(applicationContext, phoneNumber, message)) {
-            is com.supernova.anchor.utils.DataSmsSender.Result.Sent -> {
-                DebugLogger.log(TAG, "Trace SMS sent as data SMS")
-            }
-            is com.supernova.anchor.utils.DataSmsSender.Result.TooLong,
-            is com.supernova.anchor.utils.DataSmsSender.Result.Failed -> {
-                DebugLogger.log(TAG, "Trace SMS: data SMS not sent ($result), falling back to text SMS")
-                sendRegularTextSmsFallback(phoneNumber, message)
+        when (replyChannel) {
+            com.supernova.anchor.utils.ReplyChannel.TEXT -> sendRegularTextSmsFallback(phoneNumber, message)
+            com.supernova.anchor.utils.ReplyChannel.DATA -> {
+                when (val result = com.supernova.anchor.utils.DataSmsSender.send(applicationContext, phoneNumber, message)) {
+                    is com.supernova.anchor.utils.DataSmsSender.Result.Sent -> {
+                        DebugLogger.log(TAG, "Trace SMS sent as data SMS (${result.parts} part(s))")
+                    }
+                    is com.supernova.anchor.utils.DataSmsSender.Result.PartialFailure -> {
+                        DebugLogger.log(TAG, "Trace SMS: only ${result.sentParts}/${result.totalParts} parts sent (${result.reason}), sending full text SMS as a clean retry")
+                        sendRegularTextSmsFallback(phoneNumber, message)
+                    }
+                    is com.supernova.anchor.utils.DataSmsSender.Result.Failed -> {
+                        DebugLogger.log(TAG, "Trace SMS: data SMS send failed (${result.reason}), sending as text SMS instead so it isn't dropped")
+                        sendRegularTextSmsFallback(phoneNumber, message)
+                    }
+                }
             }
         }
     }
