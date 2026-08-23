@@ -271,20 +271,19 @@ class LocationForegroundService : Service() {
      * channel still falls back to text SMS so nothing is silently dropped.
      */
     private fun sendSms(number: String, text: String, dataParts: List<String>? = null) {
-        com.supernova.anchor.data.MessageRepository.addMessage(
-            applicationContext,
-            com.supernova.anchor.data.ChatMessage(
-                id = java.util.UUID.randomUUID().toString(),
-                text = text,
-                sender = number,
-                timestamp = System.currentTimeMillis(),
-                isIncoming = false
-            )
-        )
-
         when (replyChannel) {
             com.supernova.anchor.utils.ReplyChannel.TEXT -> sendRegularTextSmsFallback(number, text)
             com.supernova.anchor.utils.ReplyChannel.DATA -> {
+                com.supernova.anchor.data.MessageRepository.addMessage(
+                    applicationContext,
+                    com.supernova.anchor.data.ChatMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        text = text,
+                        sender = number,
+                        timestamp = System.currentTimeMillis(),
+                        isIncoming = false
+                    )
+                )
                 val result = if (dataParts != null) {
                     com.supernova.anchor.utils.DataSmsSender.sendParts(applicationContext, number, dataParts)
                 } else {
