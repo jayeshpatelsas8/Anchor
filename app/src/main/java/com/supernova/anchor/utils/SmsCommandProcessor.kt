@@ -47,11 +47,16 @@ class SmsCommandProcessor(private val context: Context) {
 
     private val appSettings = AppSettings(context)
     private val soundModeManager = SoundModeManager(context)
+    // Set once at the top of processCommand() and read by every handler and
+    // sendSmsResponse() below. Safe as instance state because a fresh
+    // SmsCommandProcessor is constructed per command (see both receivers).
+    private var replyChannel: ReplyChannel = ReplyChannel.TEXT
 
-    fun processCommand(rawCommand: String, senderNumber: String) {
+    fun processCommand(rawCommand: String, senderNumber: String, replyChannel: ReplyChannel) {
+        this.replyChannel = replyChannel
         DebugLogger.init(context)
         DebugLogger.log(TAG, "---------- START ----------")
-        DebugLogger.log(TAG, "Raw: '$rawCommand' | Sender: $senderNumber")
+        DebugLogger.log(TAG, "Raw: '$rawCommand' | Sender: $senderNumber | Channel: $replyChannel")
 
         val commandPassword = appSettings.getString(AppSettings.SMS_COMMAND_PASSWORD)
         val commandPrefix = appSettings.getString(AppSettings.SMS_COMMAND_PREFIX)
@@ -82,7 +87,7 @@ class SmsCommandProcessor(private val context: Context) {
         when (command) {
             "locate" -> {
                 DebugLogger.log(TAG, ">>> LOCATE: Starting foreground service")
-                LocationForegroundService.start(context, senderNumber)
+                LocationForegroundService.start(context, senderNumber, replyChannel)
             }
             "ring" -> handleRingCommand()
             "info" -> handleInfoCommand(senderNumber)
@@ -186,7 +191,7 @@ class SmsCommandProcessor(private val context: Context) {
     
     if (params.isEmpty()) {
         // No interval provided, use default 15
-        TraceForegroundService.start(context, senderNumber, 15)
+        TraceForegroundService.start(context, senderNumber, 15, replyChannel)
         sendSmsResponse(senderNumber, "Trace starting with default 15 min interval.")
         return
     }
@@ -209,7 +214,7 @@ class SmsCommandProcessor(private val context: Context) {
         return
     }
     
-    TraceForegroundService.start(context, senderNumber, interval)
+    TraceForegroundService.start(context, senderNumber, interval, replyChannel)
     sendSmsResponse(senderNumber, "Trace starting. Location every $interval min.")
 }
 
@@ -242,7 +247,7 @@ class SmsCommandProcessor(private val context: Context) {
     }
 
     private fun sendSmsResponse(phoneNumber: String, message: String) {
-        DebugLogger.log(TAG, "RESPONSE: To=$phoneNumber Len=${message.length} Preview='${message.take(50)}...'")
+        DebugLogger.log(TAG, "RESPONSE: To=$phoneNumber Len=${message.length} Channel=$replyChannel Preview='${message.take(50)}...'")
 
         com.supernova.anchor.data.MessageRepository.addMessage(
             context,
@@ -255,21 +260,28 @@ class SmsCommandProcessor(private val context: Context) {
             )
         )
 
-        // Try data SMS first (port 15000) so the reply auto-appears in the
-        // sender's Binary Mode thread. Falls back to regular text SMS if the
-        // payload is too long for a single data-SMS segment — see
-        // DataSmsSender's doc comment for why there's no multipart here.
-        when (val result = DataSmsSender.send(context, phoneNumber, message)) {
-            is DataSmsSender.Result.Sent -> {
-                DebugLogger.log(TAG, "RESPONSE: sent as data SMS")
-            }
-            is DataSmsSender.Result.TooLong -> {
-                DebugLogger.log(TAG, "RESPONSE: ${result.actualBytes}B too long for data SMS, falling back to text SMS")
-                sendRegularTextSmsFallback(phoneNumber, message)
-            }
-            is DataSmsSender.Result.Failed -> {
-                DebugLogger.log(TAG, "RESPONSE: data SMS failed (${result.reason}), falling back to text SMS")
-                sendRegularTextSmsFallback(phoneNumber, message)
+        // Deterministic: reply on whichever channel the command arrived on.
+        // No "try data, fall back to text" choice being made here — that
+        // was the old behavior and it's gone. Multi-part chunking (see
+        // DataSmsSender) means data SMS can now carry long replies too, so
+        // there's no size-based fallback left — only a genuine send failure
+        // falls back to text SMS, so nothing is silently dropped.
+        when (replyChannel) {
+            ReplyChannel.TEXT -> sendRegularTextSmsFallback(phoneNumber, message)
+            ReplyChannel.DATA -> {
+                when (val result = DataSmsSender.send(context, phoneNumber, message)) {
+                    is DataSmsSender.Result.Sent -> {
+                        DebugLogger.log(TAG, "RESPONSE: sent as data SMS (${result.parts} part(s))")
+                    }
+                    is DataSmsSender.Result.PartialFailure -> {
+                        DebugLogger.log(TAG, "RESPONSE: only ${result.sentParts}/${result.totalParts} parts sent (${result.reason}) — recipient got an incomplete message, sending full text SMS as a clean retry")
+                        sendRegularTextSmsFallback(phoneNumber, message)
+                    }
+                    is DataSmsSender.Result.Failed -> {
+                        DebugLogger.log(TAG, "RESPONSE: data SMS send failed (${result.reason}), sending as text SMS instead so it isn't dropped")
+                        sendRegularTextSmsFallback(phoneNumber, message)
+                    }
+                }
             }
         }
     }
