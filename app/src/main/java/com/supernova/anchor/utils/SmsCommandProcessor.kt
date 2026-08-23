@@ -249,26 +249,31 @@ class SmsCommandProcessor(private val context: Context) {
     private fun sendSmsResponse(phoneNumber: String, message: String) {
         DebugLogger.log(TAG, "RESPONSE: To=$phoneNumber Len=${message.length} Channel=$replyChannel Preview='${message.take(50)}...'")
 
-        com.supernova.anchor.data.MessageRepository.addMessage(
-            context,
-            com.supernova.anchor.data.ChatMessage(
-                id = java.util.UUID.randomUUID().toString(),
-                text = message,
-                sender = phoneNumber,
-                timestamp = System.currentTimeMillis(),
-                isIncoming = false
-            )
-        )
-
         // Deterministic: reply on whichever channel the command arrived on.
         // No "try data, fall back to text" choice being made here — that
         // was the old behavior and it's gone. Multi-part chunking (see
         // DataSmsSender) means data SMS can now carry long replies too, so
         // there's no size-based fallback left — only a genuine send failure
         // falls back to text SMS, so nothing is silently dropped.
+        //
+        // MessageRepository (Binary Mode's chat log) only gets a local echo
+        // on the DATA branch below — it's a log of data-SMS traffic
+        // specifically, not a generic log of every SMS the app sends. A
+        // TEXT-channel reply is a real, regular SMS with no data-SMS
+        // involved at all, so it has no business appearing in that thread.
         when (replyChannel) {
             ReplyChannel.TEXT -> sendRegularTextSmsFallback(phoneNumber, message)
             ReplyChannel.DATA -> {
+                com.supernova.anchor.data.MessageRepository.addMessage(
+                    context,
+                    com.supernova.anchor.data.ChatMessage(
+                        id = java.util.UUID.randomUUID().toString(),
+                        text = message,
+                        sender = phoneNumber,
+                        timestamp = System.currentTimeMillis(),
+                        isIncoming = false
+                    )
+                )
                 when (val result = DataSmsSender.send(context, phoneNumber, message)) {
                     is DataSmsSender.Result.Sent -> {
                         DebugLogger.log(TAG, "RESPONSE: sent as data SMS (${result.parts} part(s))")
