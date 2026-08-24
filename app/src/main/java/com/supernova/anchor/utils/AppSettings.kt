@@ -28,6 +28,17 @@ class AppSettings(private val context: Context) {
         // SAF tree Uri (as a string) for a user-chosen debug log folder.
         // Empty = use DebugLogger's auto-detected default location.
         const val DEBUG_FOLDER_TREE_URI = "debug_folder_tree_uri"
+        // Persisted trace-session state — not just held in memory, because a
+        // long-interval trace can sit for a long time between ticks with no
+        // live Service instance at all (see TraceForegroundService), and
+        // Android is free to kill the whole process while it's "asleep"
+        // waiting for the next AlarmManager firing. A freshly restarted
+        // process needs to be able to answer "is a trace running right now"
+        // correctly without any in-memory state having survived.
+        const val TRACE_ACTIVE = "trace_active"
+        const val TRACE_SENDER_NUMBER = "trace_sender_number"
+        const val TRACE_INTERVAL_MINUTES = "trace_interval_minutes"
+        const val TRACE_REPLY_CHANNEL = "trace_reply_channel"
     }
     
     fun setString(key: String, value: String) {
@@ -77,6 +88,10 @@ class AppSettings(private val context: Context) {
             HAS_SEEN_DISCLAIMER -> false
             DATA_SMS_PORT -> "15000"
             DEBUG_FOLDER_TREE_URI -> ""
+            TRACE_ACTIVE -> false
+            TRACE_SENDER_NUMBER -> ""
+            TRACE_INTERVAL_MINUTES -> "15"
+            TRACE_REPLY_CHANNEL -> "TEXT"
             else -> ""
         }
     }
