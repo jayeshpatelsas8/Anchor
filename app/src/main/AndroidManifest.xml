@@ -1,34 +1,56 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest
-    xmlns:android="http://schemas.android.com/apk/res/android"
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
+
     <!-- ============================================ -->
     <!-- PERMISSIONS                                  -->
     <!-- ============================================ -->
+
     <!-- SMS -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
+
     <!-- Location -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
+
     <!-- Phone -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
+
     <!-- Overlay -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+
     <!-- Contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
+
     <!-- Audio -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+
     <!-- Foreground service + GPS survival -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+
+    <!--
+        Lets BURST-mode trace (see TraceForegroundService) schedule precise
+        wake-ups via AlarmManager.setExactAndAllowWhileIdle() so a long
+        trace interval doesn't have to hold a foreground service the whole
+        time between sends. This is a "special app access" the user grants
+        via Settings on Android 12+ (Settings > Apps > Special app access >
+        Alarms & reminders), not a runtime permission dialog. If it isn't
+        granted, TraceForegroundService checks canScheduleExactAlarms() and
+        falls back to an inexact alarm automatically — trace still works,
+        the next SMS may just fire a bit later than exactly on schedule.
+    -->
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
     <!-- ============================================ -->
     <!-- APPLICATION                                  -->
     <!-- ============================================ -->
+
     <application
         android:allowBackup="false"
         android:fullBackupContent="false"
@@ -38,6 +60,7 @@
         android:theme="@style/Theme.anchor"
         tools:ignore="DataExtractionRules"
         tools:targetApi="31">
+
         <!-- Activities -->
         <activity
             android:name=".MainActivity"
@@ -48,24 +71,31 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
         <activity
             android:name=".SettingsActivity"
             android:exported="false" />
+
         <activity
             android:name=".PermissionsActivity"
             android:exported="false" />
+
         <activity
             android:name=".WhitelistActivity"
             android:exported="false" />
+
         <activity
             android:name=".CommandSettingsActivity"
             android:exported="false" />
+
         <activity
             android:name=".AboutActivity"
             android:exported="false" />
+
         <activity
             android:name=".ChatActivity"
             android:exported="false" />
+
         <!--
             Lets Settings open/share the debug folder or latest log file via a
             content:// URI (raw file:// URIs are blocked by Android on this
@@ -80,21 +110,25 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/file_paths" />
         </provider>
+
         <!-- Services -->
         <service
             android:name=".service.LocationForegroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />
+
         <service
             android:name=".service.TraceForegroundService"
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="location" />
+
         <service
             android:name=".service.OverlayDisplayService"
             android:enabled="true"
             android:exported="false" />
+
         <!-- Receivers -->
         <receiver
             android:name=".receiver.SmsReceiver"
@@ -105,6 +139,7 @@
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
+
         <!--
             Binary/data SMS receiver — port must match DataSmsReceiver.DATA_SMS_PORT.
             No INTERNET permission needed: data SMS travels over the same cellular
@@ -119,11 +154,14 @@
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
                 <action android:name="android.intent.action.DATA_SMS_RECEIVED" />
+
                 <data
                     android:scheme="sms"
                     android:host="localhost"
                     android:port="15000" />
             </intent-filter>
         </receiver>
+
     </application>
+
 </manifest>
