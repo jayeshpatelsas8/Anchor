@@ -42,7 +42,45 @@ class LocationForegroundService : Service() {
                 putExtra("sender", senderNumber)
                 putExtra("reply_channel", replyChannel.name)
             }
-            context.startForegroundService(intent)
+            try {
+                context.startForegroundService(intent)
+            } catch (e: Exception) {
+                // Backstop for the rare race where SmsCommandProcessor's own
+                // ACCESS_BACKGROUND_LOCATION check passed but the OS still
+                // refuses the start (permission revoked between the check
+                // and this call, or some other platform-level block).
+                // Without this, the failure is silent: no reply, and
+                // depending on exactly where the throw happens, possibly no
+                // clean log entry either.
+                DebugLogger.init(context)
+                DebugLogger.log(TAG, "startForegroundService blocked: ${e.message}")
+                notifyStartFailure(context, senderNumber, replyChannel, "Locate failed to start. Try again, or check Anchor's permissions.")
+            }
+        }
+
+        private fun notifyStartFailure(
+            context: Context,
+            senderNumber: String,
+            replyChannel: com.supernova.anchor.utils.ReplyChannel,
+            message: String
+        ) {
+            try {
+                when (replyChannel) {
+                    com.supernova.anchor.utils.ReplyChannel.DATA ->
+                        com.supernova.anchor.utils.DataSmsSender.send(context, senderNumber, message)
+                    com.supernova.anchor.utils.ReplyChannel.TEXT -> {
+                        val smsManager = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+                            context.getSystemService(SmsManager::class.java)
+                        } else {
+                            @Suppress("DEPRECATION")
+                            SmsManager.getDefault()
+                        }
+                        smsManager.sendTextMessage(senderNumber, null, message, null, null)
+                    }
+                }
+            } catch (e: Exception) {
+                DebugLogger.log(TAG, "Even the failure notice couldn't be sent: ${e.message}")
+            }
         }
     }
 
