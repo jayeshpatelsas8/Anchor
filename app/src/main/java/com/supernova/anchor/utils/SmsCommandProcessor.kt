@@ -86,6 +86,11 @@ class SmsCommandProcessor(private val context: Context) {
 
         when (command) {
             "locate" -> {
+                if (!hasBackgroundLocationAccess()) {
+                    DebugLogger.log(TAG, ">>> LOCATE: blocked — ACCESS_BACKGROUND_LOCATION not granted")
+                    sendSmsResponse(senderNumber, "Can't locate: background location isn't granted. Open Anchor > Permissions and allow location \"All the time\".")
+                    return
+                }
                 DebugLogger.log(TAG, ">>> LOCATE: Starting foreground service")
                 LocationForegroundService.start(context, senderNumber, replyChannel)
             }
@@ -188,7 +193,14 @@ class SmsCommandProcessor(private val context: Context) {
      
     private fun handleTraceCommand(senderNumber: String, params: List<String>) {
     DebugLogger.log(TAG, ">>> TRACE | Params: $params")
-    
+
+    val firstParamEarly = params.getOrNull(0)?.lowercase()
+    if (firstParamEarly != "stop" && !hasBackgroundLocationAccess()) {
+        DebugLogger.log(TAG, ">>> TRACE: blocked — ACCESS_BACKGROUND_LOCATION not granted")
+        sendSmsResponse(senderNumber, "Can't start trace: background location isn't granted. Open Anchor > Permissions and allow location \"All the time\".")
+        return
+    }
+
     if (params.isEmpty()) {
         // No interval provided, use default 15
         TraceForegroundService.start(context, senderNumber, 15, replyChannel)
@@ -199,7 +211,7 @@ class SmsCommandProcessor(private val context: Context) {
     val firstParam = params[0].lowercase()
     
     if (firstParam == "stop") {
-        if (TraceForegroundService.isRunning) {
+        if (TraceForegroundService.isRunning(context)) {
             TraceForegroundService.stop(context)
             sendSmsResponse(senderNumber, "Trace stopping...")
         } else {
@@ -245,6 +257,20 @@ class SmsCommandProcessor(private val context: Context) {
         DebugLogger.log(TAG, ">>> PING")
         sendSmsResponse(senderNumber, context.getString(R.string.anchor_ping_response))
     }
+
+    /**
+     * Location-type foreground services (LocationForegroundService,
+     * TraceForegroundService) can't be started from a background context —
+     * like these SMS receivers — unless ACCESS_BACKGROUND_LOCATION is
+     * actually granted ("Allow all the time", not just "While using the
+     * app"). Without it, Android throws a SecurityException the instant
+     * startForegroundService() is called, before any of this class's own
+     * error handling ever runs — the command would silently fail with no
+     * reply and no clean log entry. Checking first turns that into a clear,
+     * actionable reply instead of a silent crash.
+     */
+    private fun hasBackgroundLocationAccess(): Boolean =
+        ActivityCompat.checkSelfPermission(context, Manifest.permission.ACCESS_BACKGROUND_LOCATION) == PackageManager.PERMISSION_GRANTED
 
     private fun sendSmsResponse(phoneNumber: String, message: String) {
         DebugLogger.log(TAG, "RESPONSE: To=$phoneNumber Len=${message.length} Channel=$replyChannel Preview='${message.take(50)}...'")
