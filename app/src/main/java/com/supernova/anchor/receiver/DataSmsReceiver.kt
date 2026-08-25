@@ -62,7 +62,16 @@ class DataSmsReceiver : BroadcastReceiver() {
             return
         }
 
-        val pendingResult = goAsync()
+       val pendingResult = goAsync()
+
+        // Force-wake CPU from deep sleep so binary SMS processing completes
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "Anchor::DataSmsReceiver"
+        )
+        wakeLock.acquire(10_000)
+
         try {
             val appSettings = AppSettings(context)
             val whitelistManager = WhitelistManager(context)
