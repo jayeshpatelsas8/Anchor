@@ -163,7 +163,11 @@
                     android:port="15000" />
             </intent-filter>
         </receiver>
-
+         <!-- AlarmManager heartbeat for trace burst mode — wakes device from Doze -->
+        <receiver
+            android:name=".receiver.TraceAlarmReceiver"
+            android:enabled="true"
+            android:exported="false" />
     </application>
 
 </manifest>
