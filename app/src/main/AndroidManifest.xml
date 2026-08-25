@@ -6,25 +6,25 @@
     <!-- PERMISSIONS                                  -->
     <!-- ============================================ -->
 
-    <!-- SMS -->
+    <!-- SMS: receive commands and send replies -->
     <uses-permission android:name="android.permission.RECEIVE_SMS" />
     <uses-permission android:name="android.permission.SEND_SMS" />
 
-    <!-- Location -->
+    <!-- Location: GPS acquisition for locate/trace -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_BACKGROUND_LOCATION" />
 
-    <!-- Phone -->
+    <!-- Phone: callback feature -->
     <uses-permission android:name="android.permission.CALL_PHONE" />
 
-    <!-- Overlay -->
+    <!-- Overlay: full-screen alert during ring command -->
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
-    <!-- Contacts -->
+    <!-- Contacts: whitelist import from contacts -->
     <uses-permission android:name="android.permission.READ_CONTACTS" />
 
-    <!-- Audio -->
+    <!-- Audio: sound mode control and ringtone playback -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
 
     <!-- Foreground service + GPS survival -->
@@ -34,18 +34,14 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <!--
-        Lets BURST-mode trace (see TraceForegroundService) schedule precise
-        wake-ups via AlarmManager.setExactAndAllowWhileIdle() so a long
-        trace interval doesn't have to hold a foreground service the whole
-        time between sends. This is a "special app access" the user grants
-        via Settings on Android 12+ (Settings > Apps > Special app access >
-        Alarms & reminders), not a runtime permission dialog. If it isn't
-        granted, TraceForegroundService checks canScheduleExactAlarms() and
-        falls back to an inexact alarm automatically — trace still works,
-        the next SMS may just fire a bit later than exactly on schedule.
-    -->
+    <!-- AlarmManager: precise wake-ups for BURST-mode trace -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
+
+    <!-- CRITICAL FIX: RECEIVE_BOOT_COMPLETED allows the app to restart
+         after a device reboot. Without this, if the phone restarts, the
+         app is not started and SMS commands won't work until the user
+         manually opens the app. Essential for lost-device recovery. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <!-- ============================================ -->
     <!-- APPLICATION                                  -->
@@ -72,35 +68,14 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".SettingsActivity"
-            android:exported="false" />
+        <activity android:name=".SettingsActivity" android:exported="false" />
+        <activity android:name=".PermissionsActivity" android:exported="false" />
+        <activity android:name=".WhitelistActivity" android:exported="false" />
+        <activity android:name=".CommandSettingsActivity" android:exported="false" />
+        <activity android:name=".AboutActivity" android:exported="false" />
+        <activity android:name=".ChatActivity" android:exported="false" />
 
-        <activity
-            android:name=".PermissionsActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".WhitelistActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".CommandSettingsActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".AboutActivity"
-            android:exported="false" />
-
-        <activity
-            android:name=".ChatActivity"
-            android:exported="false" />
-
-        <!--
-            Lets Settings open/share the debug folder or latest log file via a
-            content:// URI (raw file:// URIs are blocked by Android on this
-            app's targetSdk). See res/xml/file_paths.xml for what's exposed.
-        -->
+        <!-- FileProvider: exposes debug logs for sharing/opening -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -132,23 +107,23 @@
             android:exported="false" />
 
         <!-- Receivers -->
+
+        <!-- Standard text SMS receiver -->
+        <!-- CRITICAL FIX: Added android:priority="999" so Anchor receives
+             the ordered SMS_RECEIVED broadcast BEFORE the default SMS app
+             can call abortBroadcast(). Without this, Google Messages or
+             the system SMS app may consume the broadcast before Anchor sees it. -->
         <receiver
             android:name=".receiver.SmsReceiver"
             android:enabled="true"
             android:exported="true"
             android:permission="android.permission.BROADCAST_SMS">
-            <intent-filter>
+            <intent-filter android:priority="999">
                 <action android:name="android.provider.Telephony.SMS_RECEIVED" />
             </intent-filter>
         </receiver>
 
-        <!--
-            Binary/data SMS receiver — port must match DataSmsReceiver.DATA_SMS_PORT.
-            No INTERNET permission needed: data SMS travels over the same cellular
-            signaling channel as regular SMS, just addressed to a port instead of
-            being plain text. This is a manifest-declared receiver so it wakes
-            the app even if it was killed, same as SmsReceiver.
-        -->
+        <!-- Binary/data SMS receiver on port 15000 -->
         <receiver
             android:name=".receiver.DataSmsReceiver"
             android:enabled="true"
@@ -156,18 +131,32 @@
             android:permission="android.permission.BROADCAST_SMS">
             <intent-filter>
                 <action android:name="android.intent.action.DATA_SMS_RECEIVED" />
-
                 <data
                     android:scheme="sms"
                     android:host="localhost"
                     android:port="15000" />
             </intent-filter>
         </receiver>
-         <!-- AlarmManager heartbeat for trace burst mode — wakes device from Doze -->
+
+        <!-- AlarmManager heartbeat for trace BURST mode -->
         <receiver
             android:name=".receiver.TraceAlarmReceiver"
             android:enabled="true"
             android:exported="false" />
+
+        <!-- CRITICAL FIX: Boot receiver. Re-registers trace alarms after
+             device reboot so BURST-mode trace continues working. Without this,
+             a reboot kills the trace permanently until the user manually
+             sends "trace" again. -->
+        <receiver
+            android:name=".receiver.BootReceiver"
+            android:enabled="true"
+            android:exported="true"
+            android:permission="android.permission.RECEIVE_BOOT_COMPLETED">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 
 </manifest>
