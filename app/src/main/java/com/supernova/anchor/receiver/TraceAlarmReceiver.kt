@@ -28,7 +28,7 @@ class TraceAlarmReceiver : BroadcastReceiver() {
         try {
             DebugLogger.log("TraceAlarm", "Heartbeat alarm fired")
 
-            if (!TraceForegroundService.isRunning) {
+            if (!TraceForegroundService.isRunning(context)) {
                 val sender = intent.getStringExtra("sender_number") ?: return
                 val interval = intent.getIntExtra("interval_minutes", 15)
                 val replyChannel = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
