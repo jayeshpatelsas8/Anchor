@@ -3,13 +3,9 @@ package com.supernova.anchor.receiver
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
-import android.os.Handler
-import android.os.Looper
 import android.os.PowerManager
 import android.provider.Telephony
 import android.telephony.SmsMessage
-import android.util.Log
-import com.supernova.anchor.BuildConfig
 import com.supernova.anchor.utils.AppSettings
 import com.supernova.anchor.utils.DebugLogger
 import com.supernova.anchor.utils.SmsCommandProcessor
@@ -29,7 +25,7 @@ class SmsReceiver : BroadcastReceiver() {
             return
         }
 
-         val pendingResult = goAsync()
+        val pendingResult = goAsync()
 
         // Force-wake CPU from deep sleep so command parsing + execution completes
         val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
@@ -39,22 +35,22 @@ class SmsReceiver : BroadcastReceiver() {
         )
         wakeLock.acquire(10_000)
 
-        val appSettings = AppSettings(context)
-        val whitelistManager = WhitelistManager(context)
-        val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
+        try {
+            val appSettings = AppSettings(context)
+            val whitelistManager = WhitelistManager(context)
+            val messages = Telephony.Sms.Intents.getMessagesFromIntent(intent)
 
-        DebugLogger.log(TAG, "========== SMS RECEIVED ==========")
-        DebugLogger.log(TAG, "Message count: ${messages.size}")
+            DebugLogger.log(TAG, "========== SMS RECEIVED ==========")
+            DebugLogger.log(TAG, "Message count: ${messages.size}")
 
-        for (message in messages) {
-            processMessage(context, message, appSettings, whitelistManager)
-        }
-
-        Handler(Looper.getMainLooper()).postDelayed({
-            DebugLogger.log(TAG, "goAsync finishing")
+            for (message in messages) {
+                processMessage(context, message, appSettings, whitelistManager)
+            }
+        } finally {
+            // FINISH IMMEDIATELY — exactly like DataSmsReceiver
             if (wakeLock.isHeld) wakeLock.release()
             pendingResult.finish()
-        }, 5_000)
+        }
     }
 
     private fun processMessage(
