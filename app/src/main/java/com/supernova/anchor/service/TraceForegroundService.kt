@@ -37,19 +37,19 @@ package com.supernova.anchor.service
 // - ReplyChannel.kt             : TEXT vs DATA enum
 //
 // STEP-BY-STEP FLOW (BURST mode):
-// 1. SmsCommandProcessor calls start() → persistSession() saves settings
+// 1. SmsCommandProcessor calls start() -> persistSession() saves settings
 // 2. startForegroundService() launches this service with ACTION_START
 // 3. onStartCommand() reads interval from Intent extras
-// 4. If interval > 5 min → startBurstTick()
+// 4. If interval > 5 min -> startBurstTick()
 // 5. Register GPS + Fused listeners, hold WakeLock for bounded time
-// 6. On good GPS fix (accuracy <= 20m) or timeout → finishBurstTick()
+// 6. On good GPS fix (accuracy <= 20m) or timeout -> finishBurstTick()
 // 7. Build report, send via SMS on the correct channel, schedule next alarm
 // 8. stopForeground() + stopSelf() — service dies, no lingering resources
-// 9. AlarmManager fires at next interval → goto step 2
+// 9. AlarmManager fires at next interval -> goto step 2
 //
 // STEP-BY-STEP FLOW (CONTINUOUS mode):
 // 1-3 same as above
-// 4. If interval <= 5 min → startContinuousMode()
+// 4. If interval <= 5 min -> startContinuousMode()
 // 5. Register GPS + Fused listeners, startForeground() with notification
 // 6. Timer thread sleeps for interval, then wakes and sends report
 // 7. Repeat until "trace stop" command or service killed
@@ -509,24 +509,28 @@ class TraceForegroundService : Service() {
         }
 
         val df = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
-        return buildString {
-            append("Trace:
-")
-            append("${"%.6f".format(primary.latitude)},${"%.6f".format(primary.longitude)}
-")
-            append("Source: $primarySource, Acc: ±${"%.1f".format(primary.accuracy)}m
-")
-            append("Time: ${df.format(Date(primary.time))}
-")
-            append("https://maps.google.com/?q=${primary.latitude},${primary.longitude}")
-            if (other != null) {
-                append("
-Also($otherLabel): https://maps.google.com/?q=${other.latitude},${other.longitude} ±${"%.1f".format(other.accuracy)}m")
-            }
+        val latStr = String.format(Locale.getDefault(), "%.6f", primary.latitude)
+        val lonStr = String.format(Locale.getDefault(), "%.6f", primary.longitude)
+        val accStr = String.format(Locale.getDefault(), "%.1f", primary.accuracy)
+
+        val sb = StringBuilder()
+        sb.append("Trace:").append('\n')
+        sb.append(latStr).append(",").append(lonStr).append('\n')
+        sb.append("Source: ").append(primarySource).append(", Acc: +/-").append(accStr).append("m").append('\n')
+        sb.append("Time: ").append(df.format(Date(primary.time))).append('\n')
+        sb.append("https://maps.google.com/?q=").append(latStr).append(",").append(lonStr)
+
+        if (other != null) {
+            val oLat = String.format(Locale.getDefault(), "%.6f", other.latitude)
+            val oLon = String.format(Locale.getDefault(), "%.6f", other.longitude)
+            val oAcc = String.format(Locale.getDefault(), "%.1f", other.accuracy)
+            sb.append('\n').append("Also(").append(otherLabel).append("): https://maps.google.com/?q=")
+            sb.append(oLat).append(",").append(oLon).append(" +/-").append(oAcc).append("m")
         }
+        return sb.toString()
     }
 
-    /** Sends trace reply on the correct channel, with data→text fallback. */
+    /** Sends trace reply on the correct channel, with data->text fallback. */
     private fun sendTraceSms(channel: ReplyChannel, number: String, message: String) {
         when (channel) {
             ReplyChannel.TEXT -> sendRegularTextSmsFallback(number, message)
