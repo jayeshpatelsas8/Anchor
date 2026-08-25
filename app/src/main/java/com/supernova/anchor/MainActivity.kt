@@ -73,8 +73,15 @@ class MainActivity : ComponentActivity() {
         // Check battery optimization — critical for background GPS survival
         if (BatteryOptimizationUtils.isBatteryOptimizationEnabled(this)) {
             Log.w("MainActivity", "Battery optimization is ON — may kill background GPS")
-            // Optional: show a Toast or dialog prompting user to disable it
-            // BatteryOptimizationUtils.requestExemption(this)
+            androidx.appcompat.app.AlertDialog.Builder(this)
+                .setTitle("Battery Optimization")
+                .setMessage("Anchor needs to run in the background for GPS tracking and SMS commands. Please disable battery optimization for this app.")
+                .setPositiveButton("Disable") { _, _ ->
+                    BatteryOptimizationUtils.requestExemption(this)
+                }
+                .setNegativeButton("Later", null)
+                .setCancelable(false)
+                .show()
         }
 
         // Check if GPS is enabled at system level
