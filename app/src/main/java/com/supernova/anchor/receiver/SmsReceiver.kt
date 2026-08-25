@@ -28,7 +28,15 @@ class SmsReceiver : BroadcastReceiver() {
             return
         }
 
-        val pendingResult = goAsync()
+         val pendingResult = goAsync()
+
+        // Force-wake CPU from deep sleep so command parsing + execution completes
+        val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+        val wakeLock = powerManager.newWakeLock(
+            PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+            "Anchor::SmsReceiver"
+        )
+        wakeLock.acquire(10_000)
 
         val appSettings = AppSettings(context)
         val whitelistManager = WhitelistManager(context)
@@ -41,9 +49,9 @@ class SmsReceiver : BroadcastReceiver() {
             processMessage(context, message, appSettings, whitelistManager)
         }
 
-        // Keep receiver alive 5s for non-locate commands (ring/info/ping)
         Handler(Looper.getMainLooper()).postDelayed({
             DebugLogger.log(TAG, "goAsync finishing")
+            if (wakeLock.isHeld) wakeLock.release()
             pendingResult.finish()
         }, 5_000)
     }
