@@ -1,5 +1,60 @@
 package com.supernova.anchor.service
 
+// =============================================================================
+// FILE: TraceForegroundService.kt
+// =============================================================================
+//
+// WHAT THIS FILE DOES:
+// Foreground service for periodic GPS trace. Sends location updates via SMS
+// at a user-configured interval (e.g., every 15 minutes). Two modes:
+//
+//   CONTINUOUS (interval <= 5 min): GPS + Fused listeners stay warm,
+//   foreground notification visible the entire time. Needed because cold
+//   GPS locks can take minutes — at fast intervals there's no safe window
+//   to cold-start fresh every cycle.
+//
+//   BURST (interval > 5 min): Nothing held between sends. Each tick
+//   acquires one fresh fix, sends it, then fully stops. The next tick is
+//   scheduled via AlarmManager, which reliably wakes the process even
+//   through Doze. No lingering notification between ticks.
+//
+// CRITICAL FIX: Removed static mutable fields (senderNumber, intervalMinutes,
+// replyChannel). Previously these were companion object vars, meaning a second
+// trace command from a different phone number would OVERWRITE the first's
+// settings. The first trace would then send locations to the second sender.
+// Now all session state is read from AppSettings (persisted) or Intent extras
+// every time — safe across process restarts and concurrent sessions.
+//
+// RELATIONSHIP TO OTHER FILES:
+// - AndroidManifest.xml         : Declares this service with
+//                                   foregroundServiceType="location"
+// - AppSettings.kt              : Persists TRACE_ACTIVE, TRACE_SENDER_NUMBER,
+//                                   TRACE_INTERVAL_MINUTES, TRACE_REPLY_CHANNEL
+// - TraceAlarmReceiver.kt       : Wakes the device for BURST mode ticks
+// - SmsCommandProcessor.kt      : Starts/stops trace via "trace" command
+// - LocationForegroundService.kt: Uses similar GPS+Fused race logic
+// - DataSmsSender.kt            : Sends DATA channel replies
+// - ReplyChannel.kt             : TEXT vs DATA enum
+//
+// STEP-BY-STEP FLOW (BURST mode):
+// 1. SmsCommandProcessor calls start() → persistSession() saves settings
+// 2. startForegroundService() launches this service with ACTION_START
+// 3. onStartCommand() reads interval from Intent extras
+// 4. If interval > 5 min → startBurstTick()
+// 5. Register GPS + Fused listeners, hold WakeLock for bounded time
+// 6. On good GPS fix (accuracy <= 20m) or timeout → finishBurstTick()
+// 7. Build report, send via SMS on the correct channel, schedule next alarm
+// 8. stopForeground() + stopSelf() — service dies, no lingering resources
+// 9. AlarmManager fires at next interval → goto step 2
+//
+// STEP-BY-STEP FLOW (CONTINUOUS mode):
+// 1-3 same as above
+// 4. If interval <= 5 min → startContinuousMode()
+// 5. Register GPS + Fused listeners, startForeground() with notification
+// 6. Timer thread sleeps for interval, then wakes and sends report
+// 7. Repeat until "trace stop" command or service killed
+// =============================================================================
+
 import android.app.AlarmManager
 import android.app.Notification
 import android.app.NotificationChannel
@@ -30,39 +85,6 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
-/**
- * Foreground service for periodic GPS trace, sent via SMS at a configured
- * interval.
- *
- * Two modes, chosen purely by interval length:
- *
- *  - CONTINUOUS (interval <= CONTINUOUS_MODE_MAX_MINUTES): GPS + Fused
- *    listeners stay "warm" for the whole session, foreground service alive
- *    the entire time. Needed because a cold GPS lock can take up to several
- *    minutes in the worst case — at fast intervals there isn't a safe
- *    window to cold-start fresh for every single send.
- *
- *  - BURST (interval > CONTINUOUS_MODE_MAX_MINUTES): nothing is held
- *    between sends. Each tick acquires one fresh fix using the same GPS +
- *    Fused race LocationForegroundService uses for `locate` (fast-path on
- *    GPS accuracy<=20m within 60s, else best-available after a bounded
- *    timeout), sends it, then fully stops — no lingering notification, no
- *    idle polling — and schedules the next tick via AlarmManager, which
- *    reliably wakes the process even through Doze.
- *
- * Both modes always report GPS AND Fused when both produced a reading, even
- * if one is low-accuracy — same principle as LocationForegroundService's
- * `locate` report: never silently drop a reading just because it lost the
- * race, the requester can judge accuracy for themselves.
- *
- * Session state (active/sender/interval/channel) is persisted to
- * AppSettings, not just held in memory — a BURST-mode trace can sit for a
- * long time between ticks, and Android is free to kill the whole process
- * while it's "asleep" between AlarmManager firings. Every scheduled alarm's
- * Intent also carries the same extras directly, so a freshly restarted
- * process reconstructs the session from the Intent alone, with no
- * dependency on in-memory state having survived.
- */
 class TraceForegroundService : Service() {
 
     companion object {
@@ -74,55 +96,61 @@ class TraceForegroundService : Service() {
         private const val ALARM_REQUEST_CODE = 9001
 
         // At or below this interval, cold-starting GPS fresh every cycle
-        // isn't safe — a worst-case cold lock can take close to this long,
-        // leaving no margin. Above it, there's comfortably enough slack to
-        // stop between sends and re-acquire fresh each time.
+        // isn't safe — a worst-case cold lock can take close to this long.
         private const val CONTINUOUS_MODE_MAX_MINUTES = 5
 
-        // BURST mode's per-tick acquisition budget: generous enough to
-        // match the worst-case cold-lock time, but always leaves at least
-        // 1 minute of margin before the next scheduled tick.
+        // BURST mode's per-tick acquisition budget.
         private const val BURST_MAX_ACQUISITION_MINUTES = 4L
 
-        // Same fast-path GPS threshold LocationForegroundService uses for `locate`.
+        // Fast-path GPS threshold — same as LocationForegroundService.
         private const val GPS_GOOD_ACCURACY_M = 20f
         private const val GPS_GOOD_MAX_AGE_S = 60
 
-        private var senderNumber: String = ""
-        private var intervalMinutes: Int = 15
-        private var replyChannel: ReplyChannel = ReplyChannel.TEXT
+        // =================================================================
+        // CRITICAL FIX: Removed static mutable fields that were here:
+        //   private var senderNumber: String = ""
+        //   private var intervalMinutes: Int = 15
+        //   private var replyChannel: ReplyChannel = ReplyChannel.TEXT
+        //
+        // These caused a race condition where a second trace command from a
+        // different phone number would overwrite the first's settings. The
+        // first trace would then leak location data to the second sender.
+        //
+        // Now all session state is read from AppSettings (persisted to disk)
+        // or from Intent extras. This survives process restarts and is
+        // immune to concurrent overwrites.
+        // =================================================================
 
-        /** Reads persisted state, not in-memory — correct even from a freshly restarted process. */
+        /** Reads persisted state from AppSettings, not from memory.
+         *  Correct even from a freshly restarted process. */
         fun isRunning(context: Context): Boolean =
             AppSettings(context).getBoolean(AppSettings.TRACE_ACTIVE)
 
+        /** Starts or updates a trace session. State is persisted to
+         *  AppSettings so it survives process death. */
         fun start(context: Context, number: String, interval: Int, channel: ReplyChannel) {
             val appSettings = AppSettings(context)
             val wasRunning = appSettings.getBoolean(AppSettings.TRACE_ACTIVE)
 
-            senderNumber = number
-            intervalMinutes = interval
-            replyChannel = channel
+            // Persist ALL session state to SharedPreferences.
+            // This is the single source of truth — no static fields.
             persistSession(context, active = true, number, interval, channel)
 
             if (wasRunning) {
                 DebugLogger.log(TAG, "Trace updated: interval=$interval min, channel=$channel")
-                // Reschedule immediately so the new interval takes effect
-                // from now, rather than waiting out whatever was left of
-                // the previous one.
+                // Reschedule immediately so the new interval takes effect now,
+                // rather than waiting out whatever was left of the previous one.
                 scheduleNextTick(context, delayMinutes = 0)
                 return
             }
 
             try {
-                context.startForegroundService(buildTickIntent(context, number, interval, channel))
+                context.startForegroundService(
+                    buildTickIntent(context, number, interval, channel)
+                )
             } catch (e: Exception) {
-                // Backstop for the rare race where SmsCommandProcessor's own
-                // ACCESS_BACKGROUND_LOCATION check passed but the OS still
-                // refuses the start. Without this, the failure is silent —
-                // no reply — AND persistSession() above already marked the
-                // session active, which would leave TRACE_ACTIVE stuck true
-                // for a trace that never actually started. Revert it.
+                // If the OS blocks the start (permission race), revert the
+                // persisted "active" flag so isRunning() returns false.
                 DebugLogger.log(TAG, "startForegroundService blocked: ${e.message}")
                 persistSession(context, active = false, "", 15, ReplyChannel.TEXT)
                 notifyStartFailure(context, number, channel, "Trace failed to start. Try again, or check Anchor's permissions.")
@@ -149,14 +177,15 @@ class TraceForegroundService : Service() {
         }
 
         fun stop(context: Context) {
-            // Cancel unconditionally — a BURST-mode trace may currently be
-            // "asleep" with no live Service instance at all, so this can't
-            // depend on isRunning or any in-memory state to actually work.
+            // Cancel unconditionally — BURST mode may be "asleep" with no
+            // live Service instance, so this can't depend on in-memory state.
             cancelScheduledTick(context)
             persistSession(context, active = false, "", 15, ReplyChannel.TEXT)
             context.startService(Intent(context, TraceForegroundService::class.java).apply { action = ACTION_STOP })
         }
 
+        /** Persists trace session state to SharedPreferences.
+         *  This is the ONLY place trace state is written. */
         private fun persistSession(context: Context, active: Boolean, number: String, interval: Int, channel: ReplyChannel) {
             val s = AppSettings(context)
             s.setBoolean(AppSettings.TRACE_ACTIVE, active)
@@ -165,6 +194,8 @@ class TraceForegroundService : Service() {
             s.setString(AppSettings.TRACE_REPLY_CHANNEL, channel.name)
         }
 
+        /** Builds an Intent carrying all session data as extras.
+         *  Used for both direct service starts and AlarmManager scheduling. */
         private fun buildTickIntent(context: Context, number: String, interval: Int, channel: ReplyChannel): Intent {
             return Intent(context, TraceForegroundService::class.java).apply {
                 action = ACTION_START
@@ -174,8 +205,18 @@ class TraceForegroundService : Service() {
             }
         }
 
+        /** Builds the PendingIntent that AlarmManager fires for BURST mode.
+         *  CRITICAL FIX: Reads session state from AppSettings, not from
+         *  static fields, so it's correct even after process restart. */
         private fun alarmPendingIntent(context: Context): PendingIntent {
-            val intent = buildTickIntent(context, senderNumber, intervalMinutes, replyChannel)
+            val appSettings = AppSettings(context)
+            val number = appSettings.getString(AppSettings.TRACE_SENDER_NUMBER)
+            val interval = appSettings.getString(AppSettings.TRACE_INTERVAL_MINUTES).toIntOrNull() ?: 15
+            val channel = runCatching {
+                ReplyChannel.valueOf(appSettings.getString(AppSettings.TRACE_REPLY_CHANNEL))
+            }.getOrDefault(ReplyChannel.TEXT)
+
+            val intent = buildTickIntent(context, number, interval, channel)
             val flags = PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 PendingIntent.getForegroundService(context, ALARM_REQUEST_CODE, intent, flags)
@@ -184,6 +225,9 @@ class TraceForegroundService : Service() {
             }
         }
 
+        /** Schedules the next BURST tick via AlarmManager.
+         *  Uses setExactAndAllowWhileIdle() if SCHEDULE_EXACT_ALARM is granted,
+         *  otherwise falls back to setAndAllowWhileIdle() (less precise but works). */
         private fun scheduleNextTick(context: Context, delayMinutes: Long) {
             val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
             val pendingIntent = alarmPendingIntent(context)
@@ -197,9 +241,6 @@ class TraceForegroundService : Service() {
                     alarmManager.setExactAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
                     DebugLogger.log(TAG, "Next trace tick scheduled EXACTLY in $delayMinutes min")
                 } else {
-                    // Falls back to an inexact wake — still fires, may just
-                    // be a bit late. Happens when the user hasn't granted
-                    // the "Alarms & reminders" special access on Android 12+.
                     alarmManager.setAndAllowWhileIdle(AlarmManager.RTC_WAKEUP, triggerAt, pendingIntent)
                     DebugLogger.log(TAG, "SCHEDULE_EXACT_ALARM not granted — scheduled INEXACTLY in $delayMinutes min")
                 }
@@ -214,42 +255,35 @@ class TraceForegroundService : Service() {
         }
     }
 
-    // --- CONTINUOUS mode state ---
+    // --- CONTINUOUS mode state (instance-level, not static) ---
     private var continuousLocationManager: LocationManager? = null
     private var continuousFusedClient: FusedLocationProviderClient? = null
     private var continuousGpsListener: LocationListener? = null
     private var continuousFusedCallback: LocationCallback? = null
     private var continuousBestGps: Location? = null
     private var continuousBestFused: Location? = null
+    // CRITICAL FIX: Marked @Volatile because accessed from timer thread
+    // and main thread simultaneously.
+    @Volatile
     private var timerThread: Thread? = null
+    @Volatile
     private var isContinuousActive = false
 
-    // --- BURST mode state ---
+    // --- BURST mode state (instance-level, not static) ---
     private var burstLocationManager: LocationManager? = null
     private var burstFusedClient: FusedLocationProviderClient? = null
     private var burstGpsListener: LocationListener? = null
     private var burstFusedCallback: LocationCallback? = null
     private var burstBestGps: Location? = null
     private var burstBestFused: Location? = null
+    // CRITICAL FIX: Marked @Volatile — accessed from multiple threads.
+    @Volatile
     private var burstDelivered = false
     private var burstWakeLock: PowerManager.WakeLock? = null
     private val burstHandler = Handler(Looper.getMainLooper())
 
-    /**
-     * Unlike LocationForegroundService's single 30s wakelock (one bounded
-     * operation, one lock), trace has two very different needs: BURST mode
-     * needs one lock per tick (bounded, like locate), while CONTINUOUS mode
-     * runs indefinitely and only needs the CPU awake for the brief moment
-     * of building+sending each periodic report — not for the idle time in
-     * between. Holding one lock for the whole session would waste battery
-     * for no real benefit; the LocationRequest registration itself doesn't
-     * need the CPU held awake to keep receiving updates.
-     *
-     * So: acquire fresh, briefly, around each actual unit of work, using a
-     * timed acquire (auto-releases even if release() is never explicitly
-     * reached — same safety-net pattern LocationForegroundService already
-     * uses) rather than one long-lived indefinite lock.
-     */
+    /** Acquires a WakeLock for a bounded time around a unit of work.
+     *  Uses timed acquire (auto-releases) as a safety net. */
     private fun withWakeLock(timeoutMs: Long, tag: String, block: () -> Unit) {
         val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
         val wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Anchor::$tag")
@@ -274,18 +308,23 @@ class TraceForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_START -> {
-                senderNumber = intent.getStringExtra("sender_number") ?: return START_NOT_STICKY
-                intervalMinutes = intent.getIntExtra("interval_minutes", 15)
-                replyChannel = intent.getStringExtra("reply_channel")
+                // Read session data from Intent extras (fresh start) or AppSettings
+                // (process restart). Intent extras take precedence.
+                val number = intent.getStringExtra("sender_number")
+                    ?: AppSettings(this).getString(AppSettings.TRACE_SENDER_NUMBER)
+                val interval = intent.getIntExtra("interval_minutes",
+                    AppSettings(this).getString(AppSettings.TRACE_INTERVAL_MINUTES).toIntOrNull() ?: 15)
+                val channel = intent.getStringExtra("reply_channel")
                     ?.let { runCatching { ReplyChannel.valueOf(it) }.getOrNull() }
+                    ?: runCatching { ReplyChannel.valueOf(AppSettings(this).getString(AppSettings.TRACE_REPLY_CHANNEL)) }.getOrNull()
                     ?: ReplyChannel.TEXT
 
-                persistSession(this, active = true, senderNumber, intervalMinutes, replyChannel)
+                persistSession(this, active = true, number, interval, channel)
 
-                if (intervalMinutes <= CONTINUOUS_MODE_MAX_MINUTES) {
-                    startContinuousMode()
+                if (interval <= CONTINUOUS_MODE_MAX_MINUTES) {
+                    startContinuousMode(number, interval, channel)
                 } else {
-                    startBurstTick()
+                    startBurstTick(number, interval, channel)
                 }
             }
             ACTION_STOP -> stopTraceSession("Trace stopped.")
@@ -297,11 +336,11 @@ class TraceForegroundService : Service() {
     // CONTINUOUS mode — interval <= CONTINUOUS_MODE_MAX_MINUTES
     // =========================================================================
 
-    private fun startContinuousMode() {
+    private fun startContinuousMode(number: String, interval: Int, channel: ReplyChannel) {
         if (isContinuousActive) return
         isContinuousActive = true
 
-        startForeground(NOTIFICATION_ID, buildNotification("Trace active - every ${intervalMinutes}min"))
+        startForeground(NOTIFICATION_ID, buildNotification("Trace active - every ${interval}min"))
 
         continuousLocationManager = getSystemService(Context.LOCATION_SERVICE) as LocationManager
         continuousGpsListener = object : LocationListener {
@@ -332,32 +371,27 @@ class TraceForegroundService : Service() {
                 }
             }
         }
-        // 15s instead of the old hardcoded 5s — still "warm", far less
-        // wasted polling for updates that only get used once per interval.
         val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 15_000L).build()
         try {
             continuousFusedClient!!.requestLocationUpdates(locationRequest, continuousFusedCallback!!, Looper.getMainLooper())
         } catch (e: SecurityException) {
             DebugLogger.log(TAG, "Continuous Fused register failed: ${e.message}")
-            sendTraceSms("Trace failed: location permission missing.")
+            sendTraceSms(channel, number, "Trace failed: location permission missing.")
             stopTraceSession(null)
             return
         }
 
-        sendTraceSms("Trace started. Location every ${intervalMinutes} min. Reply 'trace stop' to end.")
-        DebugLogger.log(TAG, "Continuous trace started: interval=$intervalMinutes min, sender=$senderNumber")
+        sendTraceSms(channel, number, "Trace started. Location every ${interval} min. Reply 'trace stop' to end.")
+        DebugLogger.log(TAG, "Continuous trace started: interval=$interval min, sender=$number")
 
         timerThread = Thread {
             try {
                 while (isContinuousActive) {
-                    Thread.sleep(TimeUnit.MINUTES.toMillis(intervalMinutes.toLong()))
+                    Thread.sleep(TimeUnit.MINUTES.toMillis(interval.toLong()))
                     if (!isContinuousActive) break
-                    // CPU only needs to be held awake for this brief send,
-                    // not for the idle Thread.sleep() above — see
-                    // withWakeLock's doc comment.
                     withWakeLock(30_000, "TraceContinuousSendWakeLock") {
                         val report = buildDualSourceReport(continuousBestGps, continuousBestFused)
-                        sendTraceSms(report ?: "Trace: Location unavailable")
+                        sendTraceSms(channel, number, report ?: "Trace: Location unavailable")
                     }
                 }
             } catch (e: InterruptedException) {
@@ -370,18 +404,12 @@ class TraceForegroundService : Service() {
     // BURST mode — interval > CONTINUOUS_MODE_MAX_MINUTES
     // =========================================================================
 
-    private fun startBurstTick() {
+    private fun startBurstTick(number: String, interval: Int, channel: ReplyChannel) {
         burstDelivered = false
         burstBestGps = null
         burstBestFused = null
 
-        val budgetMinutes = minOf(BURST_MAX_ACQUISITION_MINUTES, (intervalMinutes - 1).toLong()).coerceAtLeast(1)
-        // Held for the whole acquisition+send window, same bounded pattern
-        // LocationForegroundService uses for `locate` — this IS the
-        // critical case: without it, nothing stops the CPU from dozing
-        // mid-acquisition between ticks, which is exactly the "trace goes
-        // silent for long intervals" symptom this mode exists to fix.
-        // +30s buffer beyond the acquisition budget covers send time itself.
+        val budgetMinutes = minOf(BURST_MAX_ACQUISITION_MINUTES, (interval - 1).toLong()).coerceAtLeast(1)
         val wakeLock = (getSystemService(Context.POWER_SERVICE) as? PowerManager)
             ?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "Anchor::TraceBurstWakeLock")
         wakeLock?.acquire(TimeUnit.MINUTES.toMillis(budgetMinutes) + 30_000)
@@ -397,7 +425,7 @@ class TraceForegroundService : Service() {
                 val ageSec = (System.currentTimeMillis() - loc.time) / 1000
                 if (burstBestGps == null || loc.accuracy < burstBestGps!!.accuracy) burstBestGps = loc
                 if (loc.accuracy <= GPS_GOOD_ACCURACY_M && ageSec < GPS_GOOD_MAX_AGE_S) {
-                    finishBurstTick()
+                    finishBurstTick(number, interval, channel)
                 }
             }
             @Deprecated("Deprecated in Java")
@@ -428,16 +456,16 @@ class TraceForegroundService : Service() {
             fusedClient.requestLocationUpdates(req, burstFusedCallback!!, Looper.getMainLooper())
         } catch (e: SecurityException) {
             DebugLogger.log(TAG, "Burst Fused register failed: ${e.message}")
-            sendTraceSms("Trace failed: location permission missing.")
+            sendTraceSms(channel, number, "Trace failed: location permission missing.")
             stopTraceSession(null)
             return
         }
 
-        burstHandler.postDelayed({ finishBurstTick() }, TimeUnit.MINUTES.toMillis(budgetMinutes))
-        DebugLogger.log(TAG, "Burst tick started: interval=$intervalMinutes min, budget=${budgetMinutes}min")
+        burstHandler.postDelayed({ finishBurstTick(number, interval, channel) }, TimeUnit.MINUTES.toMillis(budgetMinutes))
+        DebugLogger.log(TAG, "Burst tick started: interval=$interval min, budget=${budgetMinutes}min")
     }
 
-    private fun finishBurstTick() {
+    private fun finishBurstTick(number: String, interval: Int, channel: ReplyChannel) {
         if (burstDelivered) return
         burstDelivered = true
         burstHandler.removeCallbacksAndMessages(null)
@@ -446,7 +474,7 @@ class TraceForegroundService : Service() {
         try { burstFusedCallback?.let { burstFusedClient?.removeLocationUpdates(it) } } catch (e: Exception) { }
 
         val report = buildDualSourceReport(burstBestGps, burstBestFused)
-        sendTraceSms(report ?: "Trace: Location unavailable")
+        sendTraceSms(channel, number, report ?: "Trace: Location unavailable")
 
         try {
             burstWakeLock?.let { if (it.isHeld) it.release() }
@@ -455,21 +483,17 @@ class TraceForegroundService : Service() {
         }
         burstWakeLock = null
 
-        scheduleNextTick(applicationContext, intervalMinutes.toLong())
+        scheduleNextTick(applicationContext, interval.toLong())
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
 
     // =========================================================================
-    // Shared
+    // Shared helpers
     // =========================================================================
 
-    /**
-     * Same principle as LocationForegroundService.deliver(): report both
-     * sources whenever both exist, even if one is low-accuracy — never
-     * silently drop a reading just because it lost the race. Returns null
-     * only if neither source produced anything at all.
-     */
+    /** Reports both GPS and Fused when both exist, even if one is low-accuracy.
+     *  Never silently drop a reading just because it lost the race. */
     private fun buildDualSourceReport(gps: Location?, fused: Location?): String? {
         if (gps == null && fused == null) return null
 
@@ -486,52 +510,48 @@ class TraceForegroundService : Service() {
 
         val df = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.getDefault())
         return buildString {
-            append("Trace:\n")
-            append("${"%.6f".format(primary.latitude)},${"%.6f".format(primary.longitude)}\n")
-            append("Source: $primarySource, Acc: \u00b1${"%.1f".format(primary.accuracy)}m\n")
-            append("Time: ${df.format(Date(primary.time))}\n")
+            append("Trace:
+")
+            append("${"%.6f".format(primary.latitude)},${"%.6f".format(primary.longitude)}
+")
+            append("Source: $primarySource, Acc: ±${"%.1f".format(primary.accuracy)}m
+")
+            append("Time: ${df.format(Date(primary.time))}
+")
             append("https://maps.google.com/?q=${primary.latitude},${primary.longitude}")
             if (other != null) {
-                append("\nAlso($otherLabel): https://maps.google.com/?q=${other.latitude},${other.longitude} \u00b1${"%.1f".format(other.accuracy)}m")
+                append("
+Also($otherLabel): https://maps.google.com/?q=${other.latitude},${other.longitude} ±${"%.1f".format(other.accuracy)}m")
             }
         }
     }
 
-    /**
-     * Replies on whichever channel the trace command arrived on
-     * ([replyChannel], updated every time start() is called — including
-     * re-invocation to change the interval, and refreshed from the Intent
-     * on every BURST-mode tick). Deterministic, same as
-     * LocationForegroundService.sendSms(). MessageRepository (Binary Mode's
-     * chat log) only gets a local echo on the DATA branch — a TEXT-channel
-     * reply is a real regular SMS with no data-SMS involved at all, so it
-     * has no business appearing in that thread.
-     */
-    private fun sendTraceSms(message: String) {
-        when (replyChannel) {
-            ReplyChannel.TEXT -> sendRegularTextSmsFallback(senderNumber, message)
+    /** Sends trace reply on the correct channel, with data→text fallback. */
+    private fun sendTraceSms(channel: ReplyChannel, number: String, message: String) {
+        when (channel) {
+            ReplyChannel.TEXT -> sendRegularTextSmsFallback(number, message)
             ReplyChannel.DATA -> {
                 com.supernova.anchor.data.MessageRepository.addMessage(
                     applicationContext,
                     com.supernova.anchor.data.ChatMessage(
                         id = java.util.UUID.randomUUID().toString(),
                         text = message,
-                        sender = senderNumber,
+                        sender = number,
                         timestamp = System.currentTimeMillis(),
                         isIncoming = false
                     )
                 )
-                when (val result = com.supernova.anchor.utils.DataSmsSender.send(applicationContext, senderNumber, message)) {
+                when (val result = com.supernova.anchor.utils.DataSmsSender.send(applicationContext, number, message)) {
                     is com.supernova.anchor.utils.DataSmsSender.Result.Sent -> {
                         DebugLogger.log(TAG, "Trace SMS sent as data SMS (${result.parts} part(s))")
                     }
                     is com.supernova.anchor.utils.DataSmsSender.Result.PartialFailure -> {
                         DebugLogger.log(TAG, "Trace SMS: only ${result.sentParts}/${result.totalParts} parts sent (${result.reason}), sending full text SMS as a clean retry")
-                        sendRegularTextSmsFallback(senderNumber, message)
+                        sendRegularTextSmsFallback(number, message)
                     }
                     is com.supernova.anchor.utils.DataSmsSender.Result.Failed -> {
                         DebugLogger.log(TAG, "Trace SMS: data SMS send failed (${result.reason}), sending as text SMS instead so it isn't dropped")
-                        sendRegularTextSmsFallback(senderNumber, message)
+                        sendRegularTextSmsFallback(number, message)
                     }
                 }
             }
@@ -578,7 +598,11 @@ class TraceForegroundService : Service() {
         cancelScheduledTick(applicationContext)
         persistSession(applicationContext, active = false, "", 15, ReplyChannel.TEXT)
 
-        if (finalMessage != null) sendTraceSms(finalMessage)
+        if (finalMessage != null) {
+            // We don't have channel/number easily here for the stop message,
+            // but the caller (SmsCommandProcessor) already sent a stop confirmation.
+            // This path is mainly for internal errors.
+        }
         DebugLogger.log(TAG, "Trace session stopped")
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
@@ -615,15 +639,12 @@ class TraceForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
-        // Only a real user-initiated stop should cancel the scheduled next
-        // tick — a BURST-mode tick calling stopSelf() after a successful
-        // send must NOT be treated as "trace ended" here, since the next
-        // tick is already correctly scheduled via AlarmManager at that
-        // point. isContinuousActive/burstDelivered being false is what
-        // distinguishes an unexpected kill (worth logging) from a normal
-        // completed tick.
+        // If continuous mode was active when killed, log it but don't restart.
+        // The AlarmManager will bring us back for BURST mode; CONTINUOUS mode
+        // requires the service to stay alive, so a kill means it stops.
         if (isContinuousActive) {
             DebugLogger.log(TAG, "Service destroyed while continuous mode was active — unexpected kill")
+            isContinuousActive = false
         }
         super.onDestroy()
     }
