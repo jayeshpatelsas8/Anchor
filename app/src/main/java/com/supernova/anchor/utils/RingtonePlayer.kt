@@ -9,6 +9,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import android.os.PowerManager
 
 /**
  * Singleton class to handle ringtone playback across the app
@@ -21,6 +22,7 @@ object RingtonePlayer {
     private var audioManager: AudioManager? = null
     private var autoStopHandler: Handler? = null
     private var autoStopRunnable: Runnable? = null
+    private var ringWakeLock: PowerManager.WakeLock? = null
     
     // Status tracking
     private var isPlaying = false
@@ -39,7 +41,15 @@ object RingtonePlayer {
             
             // Get audio manager
             audioManager = context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-            
+            // Acquire WakeLock so ringtone continues even if device enters deep sleep
+            val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+            ringWakeLock = powerManager.newWakeLock(
+                PowerManager.PARTIAL_WAKE_LOCK or PowerManager.ACQUIRE_CAUSES_WAKEUP,
+                "Anchor::RingtoneWakeLock"
+            ).apply {
+                setReferenceCounted(false)
+                acquire(35_000) // 30s ring + 5s buffer
+            }
             // Save original volume
             originalVolume = audioManager?.getStreamVolume(AudioManager.STREAM_RING) ?: 0
             
@@ -117,6 +127,9 @@ object RingtonePlayer {
             audioManager = null
             
             isPlaying = false
+            // Release WakeLock so system can return to deep sleep
+            ringWakeLock?.let { if (it.isHeld) it.release() }
+            ringWakeLock = null
             Log.d(TAG, "Ringtone playback stopped successfully")
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping ringtone: ${e.message}")
