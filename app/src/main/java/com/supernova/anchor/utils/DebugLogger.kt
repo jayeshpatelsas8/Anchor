@@ -131,8 +131,7 @@ object DebugLogger {
         val customUri = if (ctx != null) getCustomDebugFolderUri(ctx) else null
         if (ctx != null && customUri != null) {
             try {
-                writeToCustomFolder(ctx, customUri, line + "
-")
+                writeToCustomFolder(ctx, customUri, line + "\n")
                 return
             } catch (e: Exception) {
                 Log.e(TAG, "Custom debug folder write failed, falling back to default location", e)
