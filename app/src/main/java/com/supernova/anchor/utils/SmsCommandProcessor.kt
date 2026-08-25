@@ -127,7 +127,9 @@ class SmsCommandProcessor(private val context: Context) {
         val commandPrefix = appSettings.getString(AppSettings.SMS_COMMAND_PREFIX)
 
         // Split by whitespace: parts[0] = command, parts[1] = password, parts[2+] = params
-        val parts = rawCommand.trim().split("\s+".toRegex())
+        // FIX: Was "\s+" in original but got mangled to "\s+". Must be double-backslash
+        // in Kotlin string literal to produce single-backslash regex for whitespace.
+        val parts = rawCommand.trim().split("\\s+".toRegex())
         DebugLogger.log(TAG, "Parts: $parts")
 
         // ----------------------------------------------------------------
@@ -166,7 +168,8 @@ class SmsCommandProcessor(private val context: Context) {
                 // Without it, Android throws SecurityException on startForegroundService().
                 if (!hasBackgroundLocationAccess()) {
                     DebugLogger.log(TAG, ">>> LOCATE: blocked — ACCESS_BACKGROUND_LOCATION not granted")
-                    sendSmsResponse(senderNumber, "Can't locate: background location isn't granted. Open Anchor > Permissions and allow location "All the time".")
+                    // FIX: Use single quotes inside the message to avoid escaping issues
+                    sendSmsResponse(senderNumber, "Can't locate: background location isn't granted. Open Anchor > Permissions and allow location 'All the time'.")
                     return
                 }
                 DebugLogger.log(TAG, ">>> LOCATE: Starting foreground service")
@@ -324,7 +327,8 @@ class SmsCommandProcessor(private val context: Context) {
         val firstParamEarly = params.getOrNull(0)?.lowercase()
         if (firstParamEarly != "stop" && !hasBackgroundLocationAccess()) {
             DebugLogger.log(TAG, ">>> TRACE: blocked — ACCESS_BACKGROUND_LOCATION not granted")
-            sendSmsResponse(senderNumber, "Can't start trace: background location isn't granted. Open Anchor > Permissions and allow location "All the time".")
+            // FIX: Use single quotes inside the message to avoid escaping issues
+            sendSmsResponse(senderNumber, "Can't start trace: background location isn't granted. Open Anchor > Permissions and allow location 'All the time'.")
             return
         }
 
@@ -360,10 +364,10 @@ class SmsCommandProcessor(private val context: Context) {
     // =================================================================
     // handleSoundCommand() — changes device ringer mode.
     // =================================================================
-    // "sound normal"  → RINGER_MODE_NORMAL
-    // "sound vibrate" → RINGER_MODE_VIBRATE
-    // "sound silent"  → RINGER_MODE_SILENT
-    // "sound" (no param) → replies with current mode
+    // "sound normal"  -> RINGER_MODE_NORMAL
+    // "sound vibrate" -> RINGER_MODE_VIBRATE
+    // "sound silent"  -> RINGER_MODE_SILENT
+    // "sound" (no param) -> replies with current mode
     //
     // RELATIONSHIP: Uses SoundModeManager.kt
     // =================================================================
