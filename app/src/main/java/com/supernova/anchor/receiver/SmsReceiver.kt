@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.provider.Telephony
 import android.telephony.SmsMessage
 import android.util.Log
