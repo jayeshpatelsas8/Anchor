@@ -98,6 +98,7 @@ class DataSmsReceiver : BroadcastReceiver() {
                 processMessage(context, message, appSettings, whitelistManager)
             }
         } finally {
+            if (wakeLock.isHeld) wakeLock.release()
             pendingResult.finish()
         }
     }
