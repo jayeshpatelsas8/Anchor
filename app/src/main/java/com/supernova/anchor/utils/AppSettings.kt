@@ -39,6 +39,7 @@ class AppSettings(private val context: Context) {
         const val TRACE_SENDER_NUMBER = "trace_sender_number"
         const val TRACE_INTERVAL_MINUTES = "trace_interval_minutes"
         const val TRACE_REPLY_CHANNEL = "trace_reply_channel"
+        const val SHOW_RCS_WARNING = "show_rcs_warning"
     }
     
     fun setString(key: String, value: String) {
@@ -69,6 +70,13 @@ class AppSettings(private val context: Context) {
     fun setStringSet(key: String, values: Set<String>) {
         sharedPreferences.edit().putStringSet(key, values).apply()
     }
+    fun getBoolean(key: String): Boolean {
+    return when (key) {
+        SHOW_RCS_WARNING -> prefs.getBoolean(key, true)
+        // ... other keys
+        else -> prefs.getBoolean(key, false)
+    }
+
     
     fun getStringSet(key: String, defaultValue: Set<String>): Set<String> {
         return sharedPreferences.getStringSet(key, defaultValue) ?: defaultValue
