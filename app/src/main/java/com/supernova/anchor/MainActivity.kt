@@ -178,17 +178,13 @@ class MainActivity : ComponentActivity() {
             // the user just won't see the battery prompt this time.
             Log.e("MainActivity", "Battery dialog failed to show (OEM compatibility): ${e.message}")
         }
-                // ----------------------------------------------------------------
-        // RCS / CHAT FEATURES WARNING
         // ----------------------------------------------------------------
-        // If Google Messages RCS is active, SMS commands may be silently
-        // dropped because RCS bypasses the SMS_RECEIVED broadcast.
-        // We show a warning and offer to open Google Messages settings.
+        // RCS / CHAT FEATURES WARNING
         // ----------------------------------------------------------------
         if (RcsDetector.isRcsLikelyActive(this)) {
             Log.w("MainActivity", "RCS likely active — SMS commands may fail")
             try {
-                AlertDialog.Builder(this)
+                android.app.AlertDialog.Builder(this)
                     .setTitle("RCS / Chat Features Detected")
                     .setMessage(RcsDetector.getRcsWarningMessage())
                     .setPositiveButton("Open Messages Settings") { _, _ ->
