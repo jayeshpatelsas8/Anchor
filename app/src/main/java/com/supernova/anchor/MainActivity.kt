@@ -82,7 +82,8 @@ import com.supernova.anchor.dialogs.DisclaimerDialog
 import com.supernova.anchor.utils.PermissionManager
 import com.supernova.anchor.utils.BatteryOptimizationUtils
 import com.supernova.anchor.utils.LocationSettingsUtils
-
+import com.supernova.anchor.utils.RcsDetector
+import com.supernova.anchor.receiver.SmsContentObserver
 
 class MainActivity : ComponentActivity() {
     private lateinit var appSettings: AppSettings
