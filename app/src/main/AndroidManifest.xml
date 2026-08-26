@@ -37,19 +37,12 @@
     <!-- AlarmManager: precise wake-ups for BURST-mode trace -->
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 
-    <!-- CRITICAL FIX: RECEIVE_BOOT_COMPLETED allows the app to restart
-         after a device reboot. Without this, if the phone restarts, the
-         app is not started and SMS commands won't work until the user
-         manually opens the app. Essential for lost-device recovery. -->
+    <!-- Boot receiver -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
-        <!-- Already declared for other features, but ensure it's there: -->
+    <!-- SMS database access (for features other than RCS detection) -->
     <uses-permission android:name="android.permission.READ_SMS" />
 
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
-
-    
     <!-- ============================================ -->
     <!-- APPLICATION                                  -->
     <!-- ============================================ -->
@@ -64,7 +57,6 @@
         tools:ignore="DataExtractionRules"
         tools:targetApi="31">
 
-        <!-- Activities -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -82,7 +74,6 @@
         <activity android:name=".AboutActivity" android:exported="false" />
         <activity android:name=".ChatActivity" android:exported="false" />
 
-        <!-- FileProvider: exposes debug logs for sharing/opening -->
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
@@ -93,7 +84,6 @@
                 android:resource="@xml/file_paths" />
         </provider>
 
-        <!-- Services -->
         <service
             android:name=".service.LocationForegroundService"
             android:enabled="true"
@@ -113,13 +103,6 @@
             android:enabled="true"
             android:exported="false" />
 
-        <!-- Receivers -->
-
-        <!-- Standard text SMS receiver -->
-        <!-- CRITICAL FIX: Added android:priority="999" so Anchor receives
-             the ordered SMS_RECEIVED broadcast BEFORE the default SMS app
-             can call abortBroadcast(). Without this, Google Messages or
-             the system SMS app may consume the broadcast before Anchor sees it. -->
         <receiver
             android:name=".receiver.SmsReceiver"
             android:enabled="true"
@@ -130,7 +113,6 @@
             </intent-filter>
         </receiver>
 
-        <!-- Binary/data SMS receiver on port 15000 -->
         <receiver
             android:name=".receiver.DataSmsReceiver"
             android:enabled="true"
@@ -145,16 +127,11 @@
             </intent-filter>
         </receiver>
 
-        <!-- AlarmManager heartbeat for trace BURST mode -->
         <receiver
             android:name=".receiver.TraceAlarmReceiver"
             android:enabled="true"
             android:exported="false" />
 
-        <!-- CRITICAL FIX: Boot receiver. Re-registers trace alarms after
-             device reboot so BURST-mode trace continues working. Without this,
-             a reboot kills the trace permanently until the user manually
-             sends "trace" again. -->
         <receiver
             android:name=".receiver.BootReceiver"
             android:enabled="true"
