@@ -177,7 +177,45 @@ class MainActivity : ComponentActivity() {
             // the user just won't see the battery prompt this time.
             Log.e("MainActivity", "Battery dialog failed to show (OEM compatibility): ${e.message}")
         }
+                // ----------------------------------------------------------------
+        // RCS / CHAT FEATURES WARNING
+        // ----------------------------------------------------------------
+        // If Google Messages RCS is active, SMS commands may be silently
+        // dropped because RCS bypasses the SMS_RECEIVED broadcast.
+        // We show a warning and offer to open Google Messages settings.
+        // ----------------------------------------------------------------
+        if (RcsDetector.isRcsLikelyActive(this)) {
+            Log.w("MainActivity", "RCS likely active — SMS commands may fail")
+            try {
+                AlertDialog.Builder(this)
+                    .setTitle("RCS / Chat Features Detected")
+                    .setMessage(RcsDetector.getRcsWarningMessage())
+                    .setPositiveButton("Open Messages Settings") { _, _ ->
+                        startActivity(RcsDetector.getOpenGoogleMessagesIntent(this))
+                    }
+                    .setNegativeButton("Ignore", null)
+                    .setNeutralButton("Learn More") { _, _ ->
+                        // Could open a help page or show more detailed explanation
+                    }
+                    .setCancelable(false)
+                    .show()
+            } catch (e: Exception) {
+                Log.e("MainActivity", "RCS dialog failed: ${e.message}")
+            }
+        }
 
+        // ----------------------------------------------------------------
+        // REGISTER SMS CONTENT OBSERVER (RCS fallback)
+        // ----------------------------------------------------------------
+        // This monitors the SMS database for RCS messages that bypass
+        // the broadcast receiver. It's a backup path, not a replacement.
+        // Requires READ_SMS permission.
+        // ----------------------------------------------------------------
+        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.READ_SMS) == PackageManager.PERMISSION_GRANTED) {
+            val smsObserver = SmsContentObserver(this)
+            smsObserver.register()
+            // Store reference if you want to unregister later (e.g., in onDestroy)
+        }
         // ----------------------------------------------------------------
         // GPS STATUS CHECK.
         // ----------------------------------------------------------------
