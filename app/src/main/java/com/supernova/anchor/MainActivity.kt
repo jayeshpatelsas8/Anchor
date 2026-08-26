@@ -178,26 +178,39 @@ class MainActivity : ComponentActivity() {
             // the user just won't see the battery prompt this time.
             Log.e("MainActivity", "Battery dialog failed to show (OEM compatibility): ${e.message}")
         }
-        // ----------------------------------------------------------------
+               // ----------------------------------------------------------------
         // RCS / CHAT FEATURES WARNING
         // ----------------------------------------------------------------
-        if (RcsDetector.isRcsLikelyActive(this)) {
-            Log.w("MainActivity", "RCS likely active — SMS commands may fail")
+        // Anchor relies on standard SMS delivery. RCS (Chat Features)
+        // upgrades SMS to data messages and bypasses SMS_RECEIVED broadcast,
+        // breaking command reception. We show a plain warning; user handles
+        // the rest manually in whatever messaging app they use.
+        // ----------------------------------------------------------------
+        if (appSettings.getBoolean(AppSettings.SHOW_RCS_WARNING)) {
             try {
+                val checkBox = android.widget.CheckBox(this).apply {
+                    text = "Do not show this warning again"
+                }
+
                 android.app.AlertDialog.Builder(this)
-                    .setTitle("RCS / Chat Features Detected")
-                    .setMessage(RcsDetector.getRcsWarningMessage())
-                    .setPositiveButton("Open Messages Settings") { _, _ ->
-                        startActivity(RcsDetector.getOpenGoogleMessagesIntent(this))
-                    }
-                    .setNegativeButton("Ignore", null)
-                    .setNeutralButton("Learn More") { _, _ ->
-                        // Could open a help page or show more detailed explanation
+                    .setTitle("RCS / Chat Features Warning")
+                    .setMessage(
+                        "This app does NOT work with RCS (Chat Features).\n\n" +
+                        "If Chat Features is turned ON in your messaging app, " +
+                        "SMS commands will be silently dropped and Anchor will not work.\n\n" +
+                        "Please disable Chat Features for reliable lost-device recovery:\n" +
+                        "Open your messaging app → Settings → Chat features → Turn OFF"
+                    )
+                    .setView(checkBox)
+                    .setPositiveButton("OK") { _, _ ->
+                        if (checkBox.isChecked) {
+                            appSettings.setBoolean(AppSettings.SHOW_RCS_WARNING, false)
+                        }
                     }
                     .setCancelable(false)
                     .show()
             } catch (e: Exception) {
-                Log.e("MainActivity", "RCS dialog failed: ${e.message}")
+                Log.e("MainActivity", "RCS warning dialog failed: ${e.message}")
             }
         }
 
