@@ -46,6 +46,8 @@
         <!-- Already declared for other features, but ensure it's there: -->
     <uses-permission android:name="android.permission.READ_SMS" />
 
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+
     
     <!-- ============================================ -->
     <!-- APPLICATION                                  -->
