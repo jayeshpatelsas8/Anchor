@@ -174,6 +174,45 @@ fun SettingsScreen(
                 )
             }
 
+                        // RCS Warning Section
+            SettingsSection(title = "RCS Warning") {
+                var showRcsWarning by remember {
+                    mutableStateOf(appSettings.getBoolean(AppSettings.SHOW_RCS_WARNING))
+                }
+
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Show on launch",
+                                style = MaterialTheme.typography.titleMedium
+                            )
+                            Spacer(modifier = Modifier.height(4.dp))
+                            Text(
+                                text = "Warn about Chat Features (RCS) when the app opens",
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Switch(
+                            checked = showRcsWarning,
+                            onCheckedChange = { checked ->
+                                showRcsWarning = checked
+                                appSettings.setBoolean(AppSettings.SHOW_RCS_WARNING, checked)
+                            }
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(16.dp))
+
             // Debug Section — several ways to find the log, on purpose:
             // (1) the full path shown as copyable text, (2) a direct "open
             // in file manager" button, (3) a "share the file" button that
