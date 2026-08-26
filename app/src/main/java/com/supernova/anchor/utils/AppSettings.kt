@@ -19,22 +19,8 @@ class AppSettings(private val context: Context) {
         const val WHITELISTED_NUMBERS = "whitelisted_numbers"
         const val USE_WHITELIST = "use_whitelist"
         const val HAS_SEEN_DISCLAIMER = "has_seen_disclaimer"
-        // Port that binary/data SMS commands are addressed to.
-        // NOTE: This value is for display/reference only. The actual port a
-        // manifest-declared receiver listens on is fixed at compile time
-        // (see DataSmsReceiver.DATA_SMS_PORT + AndroidManifest.xml <data android:port>).
-        // Changing this setting alone will NOT change what port is received on.
         const val DATA_SMS_PORT = "data_sms_port"
-        // SAF tree Uri (as a string) for a user-chosen debug log folder.
-        // Empty = use DebugLogger's auto-detected default location.
         const val DEBUG_FOLDER_TREE_URI = "debug_folder_tree_uri"
-        // Persisted trace-session state — not just held in memory, because a
-        // long-interval trace can sit for a long time between ticks with no
-        // live Service instance at all (see TraceForegroundService), and
-        // Android is free to kill the whole process while it's "asleep"
-        // waiting for the next AlarmManager firing. A freshly restarted
-        // process needs to be able to answer "is a trace running right now"
-        // correctly without any in-memory state having survived.
         const val TRACE_ACTIVE = "trace_active"
         const val TRACE_SENDER_NUMBER = "trace_sender_number"
         const val TRACE_INTERVAL_MINUTES = "trace_interval_minutes"
@@ -70,13 +56,6 @@ class AppSettings(private val context: Context) {
     fun setStringSet(key: String, values: Set<String>) {
         sharedPreferences.edit().putStringSet(key, values).apply()
     }
-    fun getBoolean(key: String): Boolean {
-    return when (key) {
-        SHOW_RCS_WARNING -> prefs.getBoolean(key, true)
-        // ... other keys
-        else -> prefs.getBoolean(key, false)
-    }
-
     
     fun getStringSet(key: String, defaultValue: Set<String>): Set<String> {
         return sharedPreferences.getStringSet(key, defaultValue) ?: defaultValue
@@ -84,7 +63,7 @@ class AppSettings(private val context: Context) {
     
     private fun defaultValues(key: String): Any {
         return when (key) {
-            SMS_COMMAND_PREFIX -> "PIN" // Anchor
+            SMS_COMMAND_PREFIX -> "PIN"
             WHITELIST_ENABLED -> false
             DO_NOT_SHOW_OVERLAY_PERMISSION_AGAIN -> false
             DO_NOT_SHOW_DEVICE_ADMIN_PERMISSION_AGAIN -> false
@@ -100,6 +79,7 @@ class AppSettings(private val context: Context) {
             TRACE_SENDER_NUMBER -> ""
             TRACE_INTERVAL_MINUTES -> "15"
             TRACE_REPLY_CHANNEL -> "TEXT"
+            SHOW_RCS_WARNING -> true
             else -> ""
         }
     }
