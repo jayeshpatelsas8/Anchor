@@ -43,6 +43,10 @@
          manually opens the app. Essential for lost-device recovery. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
+        <!-- Already declared for other features, but ensure it's there: -->
+    <uses-permission android:name="android.permission.READ_SMS" />
+
+    
     <!-- ============================================ -->
     <!-- APPLICATION                                  -->
     <!-- ============================================ -->
